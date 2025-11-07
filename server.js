@@ -1,24 +1,27 @@
-import authRoutes from "./src/routes/authRoutes.js";
-import express from "express";
-import cors from "cors";
-import connectDB from "./src/config/db.js";
-import dotenv from "dotenv";
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import mongoose from 'mongoose';
+import product from "./src/routes/product.js";
+import discount from "./src/routes/discount.js";
 
 dotenv.config();
-connectDB();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-
 app.use(cors());
 app.use(express.json());
-app.use("/api/auth", authRoutes);
+app.use("/products", product);
+app.use("/discounts", discount);
 
-// Default route to test
-app.get("/", (req, res) => {
-  res.send("✅ Comanet API is running!");
+// Test route
+app.get('/', (req, res) => {
+  res.json({ message: 'Comanet Dashboard backend running!' });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
-});
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
