@@ -1,0 +1,200 @@
+'use client'
+
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { createClient } from '@/utils/supabase/client'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState, useRef, useCallback } from 'react'
+import OrdersStats from '../components/OrdersStats'
+
+async function fetchOrdersPage({ pageParam = 0 }: { pageParam: number }) {
+  const limit = 20
+  const offset = pageParam
+  const res = await fetch(`/api/aggregated-orders?offset=${offset}&limit=${limit}`)
+  if (!res.ok) throw new Error('Failed to load orders')
+  const orders = await res.json()
+  return { orders, nextOffset: offset + orders.length }
+}
+
+export default function DashboardPage() {
+  const router = useRouter()
+  const supabase = createClient()
+  const [email, setEmail] = useState('')
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) router.push('/login')
+      else setEmail(user.email || '')
+    })
+  }, [])
+
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    error,
+  } = useInfiniteQuery({
+    queryKey: ['all-orders'],
+    queryFn: fetchOrdersPage,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      return lastPage.orders.length < 20 ? undefined : lastPage.nextOffset
+    },
+    refetchInterval: 30000,
+  })
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  // Merge all pages into a single array
+  const allOrders = data?.pages.flatMap(page => page.orders) || []
+
+  // Stats from currently loaded orders
+  const totalOrders = allOrders.length
+  const processingOrders = allOrders.filter((o: any) => o.status === 'processing').length
+  const completedOrders = allOrders.filter((o: any) => o.status === 'completed').length
+
+  // Intersection Observer for infinite scroll
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const loadMoreRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (isLoading || isFetchingNextPage) return
+      if (observerRef.current) observerRef.current.disconnect()
+      observerRef.current = new IntersectionObserver(entries => {
+        if (entries[0].isIntersecting && hasNextPage) {
+          fetchNextPage()
+        }
+      })
+      if (node) observerRef.current.observe(node)
+    },
+    [isLoading, isFetchingNextPage, hasNextPage, fetchNextPage]
+  )
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-gray-900">Store Dashboard</h1>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-600">{email}</span>
+            <button
+              onClick={handleLogout}
+              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Orders Statistics (time filters + chart) */}
+        <OrdersStats />
+
+        {/* Quick Stats Cards (Total, Processing, Completed) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <p className="text-sm font-medium text-gray-500">Total Orders</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">{totalOrders}</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <p className="text-sm font-medium text-gray-500">Processing</p>
+            <p className="text-3xl font-bold text-blue-600 mt-2">{processingOrders}</p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+            <p className="text-sm font-medium text-gray-500">Completed</p>
+            <p className="text-3xl font-bold text-green-600 mt-2">{completedOrders}</p>
+          </div>
+        </div>
+
+        {/* Orders Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="text-lg font-semibold text-gray-900">All Orders</h2>
+          </div>
+
+          {isLoading && (
+            <div className="flex justify-center items-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          )}
+
+          {error && (
+            <div className="text-center py-12">
+              <p className="text-red-500 mb-4">Failed to load orders</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {!isLoading && !error && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50 text-left">
+                      <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Order #</th>
+                      <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Store</th>
+                      <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                      <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {allOrders.map((order: any) => (
+                      <tr key={`${order._storeId}-${order.id}`} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          #{order.orderNumber}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {order._storeName}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            order.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                            order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {order.total}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(order.createdAt).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {allOrders.length === 0 && !isFetchingNextPage && (
+                  <div className="text-center py-12 text-gray-500">No orders found</div>
+                )}
+              </div>
+
+              {/* Infinite scroll sentinel */}
+              <div ref={loadMoreRef} className="h-10" />
+
+              {/* Loading more spinner */}
+              {isFetchingNextPage && (
+                <div className="flex justify-center py-6">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}
