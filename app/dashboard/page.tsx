@@ -1,10 +1,11 @@
 'use client'
 
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import OrdersStats from '../components/OrdersStats'
+import StatusBadge from '../components/StatusBadge'
 
 async function fetchOrdersPage({ pageParam = 0 }: { pageParam: number }) {
   const limit = 20
@@ -19,6 +20,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const supabase = createClient()
   const [email, setEmail] = useState('')
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -27,6 +29,7 @@ export default function DashboardPage() {
     })
   }, [])
 
+  // ----- Orders fetching (infinite scroll) -----
   const {
     data,
     fetchNextPage,
@@ -44,20 +47,38 @@ export default function DashboardPage() {
     refetchInterval: 30000,
   })
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
-
-  // Merge all pages into a single array
   const allOrders = data?.pages.flatMap(page => page.orders) || []
 
-  // Stats from currently loaded orders
+  // Quick stats
   const totalOrders = allOrders.length
   const processingOrders = allOrders.filter((o: any) => o.status === 'processing').length
   const completedOrders = allOrders.filter((o: any) => o.status === 'completed').length
 
-  // Intersection Observer for infinite scroll
+  // ----- Status update mutation -----
+  const updateStatus = useMutation({
+    mutationFn: async ({ storeId, orderId, status }: { storeId: string; orderId: string; status: string }) => {
+      const res = await fetch('/api/update-order-status', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId, orderId, status }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null)
+        throw new Error(errData?.error || 'Failed to update status')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      // Refresh the orders list and stats
+      queryClient.invalidateQueries({ queryKey: ['all-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
+    },
+    onError: (error: Error) => {
+      alert('Status update failed: ' + error.message)
+    },
+  })
+
+  // ----- Intersection Observer for infinite scroll -----
   const observerRef = useRef<IntersectionObserver | null>(null)
   const loadMoreRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -72,6 +93,12 @@ export default function DashboardPage() {
     },
     [isLoading, isFetchingNextPage, hasNextPage, fetchNextPage]
   )
+
+  // ----- Logout -----
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -95,7 +122,7 @@ export default function DashboardPage() {
         {/* Orders Statistics (time filters + chart) */}
         <OrdersStats />
 
-        {/* Quick Stats Cards (Total, Processing, Completed) */}
+        {/* Quick Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
             <p className="text-sm font-medium text-gray-500">Total Orders</p>
@@ -157,15 +184,17 @@ export default function DashboardPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {order._storeName}
                         </td>
+                        {/* Interactive Status Badge */}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            order.status === 'completed' ? 'bg-green-100 text-green-800' :
-                            order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
-                            order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {order.status}
-                          </span>
+                          <StatusBadge
+                            order={order}
+                            storeId={order._storeId}
+                            orderId={order.id}
+                            currentStatus={order.status}
+                            onStatusChange={(storeId, orderId, newStatus) => {
+                              updateStatus.mutate({ storeId, orderId, status: newStatus })
+                            }}
+                          />
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {order.total}
