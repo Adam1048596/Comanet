@@ -5,23 +5,28 @@ import { useQuery } from '@tanstack/react-query'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
+import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
 
-const periods = [
+const timePresets = [
   { label: 'Today', value: 'today' },
-  { label: '7 Days', value: '7d' },
-  { label: '30 Days', value: '30d' },
-  { label: '90 Days', value: '90d' },
-  { label: 'Year', value: 'year' },
+  { label: 'Yesterday', value: 'yesterday' },
+  { label: 'This Week', value: 'this_week' },
+  { label: 'Last Week', value: 'last_week' },
+  { label: 'This Month', value: 'this_month' },
+  { label: 'Last Month', value: 'last_month' },
+  { label: 'This Year', value: 'this_year' },
+  { label: 'Last Year', value: 'last_year' },
+  { label: 'All Time', value: 'all_time' },
 ]
 
 const allBrands = [
-  { id: 'all', name: 'All' },
+  { id: 'all', name: 'All Stores' },
   { id: '1', name: 'Auracos' },
   { id: '2', name: 'Makari' },
   { id: '3', name: 'Gamarde' },
   { id: '4', name: 'Alphascience' },
   { id: '5', name: 'Ainhoa' },
-  { id: '6', name: 'cygnelab' },
+  { id: '6', name: 'Shopify Store' },
 ]
 
 interface Props {
@@ -39,32 +44,71 @@ export default function OrdersStats({
 }: Props) {
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
-  const [showCustom, setShowCustom] = useState(false)
+  const [selectedMetric, setSelectedMetric] = useState<'orders' | 'sales' | 'sessions'>('orders')
 
   const queryParams = new URLSearchParams({
+    type: 'stats',
     period: selectedPeriod,
     storeId: selectedStore,
+    metric: selectedMetric,
   })
-  if (showCustom && customStart && customEnd) {
+  if (selectedPeriod === 'custom' && customStart && customEnd) {
     queryParams.set('start', customStart)
     queryParams.set('end', customEnd)
   }
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['stats', selectedPeriod, selectedStore, customStart, customEnd],
-    queryFn: () => fetch(`/api/orders-stats?${queryParams}`).then(r => r.json()),
+    queryKey: ['stats', selectedPeriod, selectedStore, selectedMetric, customStart, customEnd],
+    queryFn: () => fetch(`/api/orders?${queryParams}`).then(r => r.json()),
   })
 
-  const stats = data || { totalOrders: 0, totalRevenue: 0, averageOrderValue: 0, ordersGrowth: 0, chartData: [] }
+  const stats = data || {
+    sessions: 0,
+    totalSales: 0,
+    orders: 0,
+    ordersGrowth: 0,
+    salesGrowth: 0,
+    sessionsGrowth: 0,
+    currentChartData: [],
+    previousChartData: [],
+  }
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'MAD' }).format(val)
+
+  const Trend = ({ value }: { value: number }) => {
+    if (value > 0) return <span className="flex items-center gap-0.5 text-green-600 text-xs"><ArrowUp size={12} />{value.toFixed(1)}%</span>
+    if (value < 0) return <span className="flex items-center gap-0.5 text-red-600 text-xs"><ArrowDown size={12} />{Math.abs(value).toFixed(1)}%</span>
+    return <span className="flex items-center gap-0.5 text-gray-400 text-xs"><Minus size={12} />0%</span>
+  }
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-6">
-      {/* Header: Title + Brand dropdown (kept for accessibility) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
-        <h2 className="text-sm font-semibold text-gray-800 uppercase tracking-wider">
-          Orders Statistics
-        </h2>
-        <div className="flex items-center gap-3">
+      {/* Top controls: Date presets + Store filter */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedPeriod}
+            onChange={(e) => onPeriodChange(e.target.value)}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+          >
+            {timePresets.map(p => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+            <option value="custom">Custom</option>
+          </select>
+
+          {selectedPeriod === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+              <span className="text-gray-500">–</span>
+              <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="border rounded px-2 py-1 text-sm" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">Store:</span>
           <select
             value={selectedStore}
             onChange={(e) => onStoreChange(e.target.value)}
@@ -77,104 +121,85 @@ export default function OrdersStats({
         </div>
       </div>
 
-      {/* Time period filters */}
-      <div className="flex flex-wrap gap-2 mb-3">
-        {periods.map(p => (
-          <button
-            key={p.value}
-            onClick={() => { onPeriodChange(p.value); setShowCustom(false) }}
-            className={`px-3 py-1.5 text-sm rounded-md border ${
-              selectedPeriod === p.value && !showCustom
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
+      {/* Metric cards – clickable selectors */}
+      <div className="grid grid-cols-3 gap-4 mb-5">
         <button
-          onClick={() => setShowCustom(!showCustom)}
-          className={`px-3 py-1.5 text-sm rounded-md border ${
-            showCustom ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+          onClick={() => setSelectedMetric('orders')}
+          className={`text-left bg-gray-50 rounded-lg p-4 border-2 transition-colors ${
+            selectedMetric === 'orders' ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'
           }`}
         >
-          Custom
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Orders</p>
+          <p className="text-2xl font-semibold mt-1">{stats.orders}</p>
+          <div className="mt-1"><Trend value={stats.ordersGrowth} /></div>
+        </button>
+        <button
+          onClick={() => setSelectedMetric('sales')}
+          className={`text-left bg-gray-50 rounded-lg p-4 border-2 transition-colors ${
+            selectedMetric === 'sales' ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'
+          }`}
+        >
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sales</p>
+          <p className="text-2xl font-semibold mt-1">{formatCurrency(stats.totalSales)}</p>
+          <div className="mt-1"><Trend value={stats.salesGrowth} /></div>
+        </button>
+        <button
+          onClick={() => setSelectedMetric('sessions')}
+          className={`text-left bg-gray-50 rounded-lg p-4 border-2 transition-colors ${
+            selectedMetric === 'sessions' ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'
+          }`}
+        >
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Sessions</p>
+          <p className="text-2xl font-semibold mt-1">{stats.sessions}</p>
+          <div className="mt-1"><Trend value={stats.sessionsGrowth} /></div>
         </button>
       </div>
 
-      {/* Brand filter pills – directly in the chart area */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        {allBrands.map(brand => (
-          <button
-            key={brand.id}
-            onClick={() => onStoreChange(brand.id)}
-            className={`px-3 py-1 text-xs rounded-full border ${
-              selectedStore === brand.id
-                ? 'bg-gray-800 text-white border-gray-800'
-                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'
-            }`}
-          >
-            {brand.name}
-          </button>
-        ))}
-      </div>
-
-      {showCustom && (
-        <div className="flex flex-wrap items-end gap-4 mb-4">
-          <div>
-            <label className="block text-xs text-gray-500">Start</label>
-            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="border rounded px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500">End</label>
-            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="border rounded px-3 py-2 text-sm" />
-          </div>
+      {/* Chart */}
+      {isLoading && (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin h-6 w-6 border-b-2 border-blue-600 rounded-full" />
         </div>
       )}
-
-      {isLoading && <div className="flex justify-center py-8"><div className="animate-spin h-6 w-6 border-b-2 border-blue-600 rounded-full" /></div>}
       {error && <p className="text-red-500 py-4">Failed to load stats</p>}
-
       {!isLoading && !error && (
-        <>
-          <div className="grid grid-cols-2 gap-4 mb-5">
-            <div className="bg-gray-50 rounded-md p-3">
-              <p className="text-xs text-gray-500">Total Orders</p>
-              <p className="text-xl font-semibold">{stats.totalOrders}</p>
-            </div>
-            <div className="bg-gray-50 rounded-md p-3">
-              <p className="text-xs text-gray-500">Revenue</p>
-              <p className="text-xl font-semibold">${stats.totalRevenue.toFixed(0)}</p>
-            </div>
-          </div>
-          {stats.totalOrders > 0 && (
-            <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-                <div className="bg-gray-50 rounded-md p-3">
-                  <p className="text-xs text-gray-500">Avg. Order</p>
-                  <p className="text-sm font-semibold">${stats.averageOrderValue.toFixed(2)}</p>
-                </div>
-                <div className="bg-gray-50 rounded-md p-3">
-                  <p className="text-xs text-gray-500">Growth</p>
-                  <p className={`text-sm font-semibold ${stats.ordersGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {stats.ordersGrowth >= 0 ? '+' : ''}{stats.ordersGrowth.toFixed(1)}%
-                  </p>
-                </div>
-              </div>
-              <div className="h-48 sm:h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={stats.chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12 }} tickFormatter={date => new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                    <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }} />
-                    <Line type="monotone" dataKey="orders" stroke="#2563eb" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-        </>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 12 }}
+                tickFormatter={(date) =>
+                  new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                }
+              />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }} />
+              <Line
+                data={stats.currentChartData}
+                type="monotone"
+                dataKey="value"
+                stroke="#2563eb"
+                strokeWidth={2}
+                dot={false}
+                name="Current period"
+              />
+              {stats.previousChartData.length > 0 && (
+                <Line
+                  data={stats.previousChartData}
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#94a3b8"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  name="Previous period"
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       )}
     </div>
   )

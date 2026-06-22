@@ -20,7 +20,7 @@ export default function OrderDetailPage() {
   const { data: order, isLoading, error } = useQuery({
     queryKey: ['order-detail', storeId, orderId],
     queryFn: async () => {
-      const res = await fetch(`/api/orders/detail?storeId=${storeId}&orderId=${orderId}`)
+      const res = await fetch(`/api/orders?type=detail&storeId=${storeId}&orderId=${orderId}`)
       if (!res.ok) {
         const err = await res.json().catch(() => null)
         throw new Error(err?.error || 'Failed to load order')

@@ -9,15 +9,16 @@ import StatusBadge from '@/components/StatusBadge'
 
 // Fetch function now includes period and storeId
 async function fetchOrdersPage({ pageParam = 0, period, storeId }: { pageParam: number; period: string; storeId: string }) {
-  const limit = 20
+  const limit = 50
   const offset = pageParam
   const params = new URLSearchParams({
+    type: 'list',
     offset: String(offset),
     limit: String(limit),
     period,
     storeId,
   })
-  const res = await fetch(`/api/aggregated-orders?${params}`)
+  const res = await fetch(`/api/orders?${params}`)
   if (!res.ok) throw new Error('Failed to load orders')
   const orders = await res.json()
   return { orders, nextOffset: offset + orders.length }
@@ -53,22 +54,18 @@ export default function DashboardPage() {
     queryFn: ({ pageParam = 0 }) => fetchOrdersPage({ pageParam, period: selectedPeriod, storeId: selectedStore }),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
-      return lastPage.orders.length < 20 ? undefined : lastPage.nextOffset
+      // limit is 50, so if we got fewer than 50, there are no more pages
+      return lastPage.orders.length < 50 ? undefined : lastPage.nextOffset
     },
     refetchInterval: 30000,
   })
 
   const allOrders = data?.pages.flatMap(page => page.orders) || []
 
-  // Quick stats
-  const totalOrders = allOrders.length
-  const processingOrders = allOrders.filter((o: any) => o.status === 'processing').length
-  const completedOrders = allOrders.filter((o: any) => o.status === 'completed').length
-
-  // ----- Status update mutation -----
+  // ----- Status update mutation (using unified API) -----
   const updateStatus = useMutation({
     mutationFn: async ({ storeId, orderId, status }: { storeId: string; orderId: string; status: string }) => {
-      const res = await fetch('/api/update-order-status', {
+      const res = await fetch('/api/orders', {   // <-- unified API endpoint
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storeId, orderId, status }),
@@ -136,22 +133,6 @@ export default function DashboardPage() {
           selectedPeriod={selectedPeriod}
           onPeriodChange={setSelectedPeriod}
         />
-
-        {/* Quick Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-            <p className="text-sm font-medium text-gray-500">Total Orders</p>
-            <p className="text-3xl font-bold text-gray-900 mt-2">{totalOrders}</p>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-            <p className="text-sm font-medium text-gray-500">Processing</p>
-            <p className="text-3xl font-bold text-blue-600 mt-2">{processingOrders}</p>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-            <p className="text-sm font-medium text-gray-500">Completed</p>
-            <p className="text-3xl font-bold text-green-600 mt-2">{completedOrders}</p>
-          </div>
-        </div>
 
         {/* Orders Table */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
