@@ -4,13 +4,20 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, useRef, useCallback } from 'react'
-import OrdersStats from '../components/OrdersStats'
-import StatusBadge from '../components/StatusBadge'
+import OrdersStats from '@/components/OrdersStats'
+import StatusBadge from '@/components/StatusBadge'
 
-async function fetchOrdersPage({ pageParam = 0 }: { pageParam: number }) {
+// Fetch function now includes period and storeId
+async function fetchOrdersPage({ pageParam = 0, period, storeId }: { pageParam: number; period: string; storeId: string }) {
   const limit = 20
   const offset = pageParam
-  const res = await fetch(`/api/aggregated-orders?offset=${offset}&limit=${limit}`)
+  const params = new URLSearchParams({
+    offset: String(offset),
+    limit: String(limit),
+    period,
+    storeId,
+  })
+  const res = await fetch(`/api/aggregated-orders?${params}`)
   if (!res.ok) throw new Error('Failed to load orders')
   const orders = await res.json()
   return { orders, nextOffset: offset + orders.length }
@@ -21,6 +28,10 @@ export default function DashboardPage() {
   const supabase = createClient()
   const [email, setEmail] = useState('')
   const queryClient = useQueryClient()
+
+  // ----- Shared filter state -----
+  const [selectedPeriod, setSelectedPeriod] = useState('30d')   // default 30 days
+  const [selectedStore, setSelectedStore] = useState('all')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -38,8 +49,8 @@ export default function DashboardPage() {
     isLoading,
     error,
   } = useInfiniteQuery({
-    queryKey: ['all-orders'],
-    queryFn: fetchOrdersPage,
+    queryKey: ['all-orders', selectedPeriod, selectedStore],
+    queryFn: ({ pageParam = 0 }) => fetchOrdersPage({ pageParam, period: selectedPeriod, storeId: selectedStore }),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
       return lastPage.orders.length < 20 ? undefined : lastPage.nextOffset
@@ -69,7 +80,6 @@ export default function DashboardPage() {
       return res.json()
     },
     onSuccess: () => {
-      // Refresh the orders list and stats
       queryClient.invalidateQueries({ queryKey: ['all-orders'] })
       queryClient.invalidateQueries({ queryKey: ['stats'] })
     },
@@ -119,8 +129,13 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Orders Statistics (time filters + chart) */}
-        <OrdersStats />
+        {/* Orders Statistics – with filter controls */}
+        <OrdersStats
+          selectedStore={selectedStore}
+          onStoreChange={setSelectedStore}
+          selectedPeriod={selectedPeriod}
+          onPeriodChange={setSelectedPeriod}
+        />
 
         {/* Quick Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -177,17 +192,19 @@ export default function DashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {allOrders.map((order: any) => (
-                      <tr key={`${order._storeId}-${order.id}`} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <tr
+                        key={`${order._storeId}-${order.id}`}
+                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        onClick={() => router.push(`/dashboard/orders/${order.id}?storeId=${order._storeId}`)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
                           #{order.orderNumber}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {order._storeName}
                         </td>
-                        {/* Interactive Status Badge */}
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <StatusBadge
-                            order={order}
                             storeId={order._storeId}
                             orderId={order.id}
                             currentStatus={order.status}
@@ -211,10 +228,7 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {/* Infinite scroll sentinel */}
               <div ref={loadMoreRef} className="h-10" />
-
-              {/* Loading more spinner */}
               {isFetchingNextPage && (
                 <div className="flex justify-center py-6">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
