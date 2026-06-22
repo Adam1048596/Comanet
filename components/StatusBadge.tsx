@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 
-// Allowed statuses per platform – you can extend
 const statuses = ['pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded', 'failed']
 
 const statusColors: Record<string, string> = {
@@ -15,34 +14,53 @@ const statusColors: Record<string, string> = {
   failed: 'bg-gray-100 text-gray-800',
 }
 
+interface StatusBadgeProps {
+  order?: any            // optional – not required
+  storeId?: string
+  orderId?: string
+  currentStatus: string
+  onStatusChange?: (storeId: string, orderId: string, status: string) => void
+  readonly?: boolean     // set to true for static display
+}
+
 export default function StatusBadge({
-  order,
-  storeId,
-  orderId,
+  storeId = '',
+  orderId = '',
   currentStatus,
   onStatusChange,
-}: {
-  order: any
-  storeId: string
-  orderId: string
-  currentStatus: string
-  onStatusChange: (storeId: string, orderId: string, status: string) => void
-}) {
+  readonly = false,
+}: StatusBadgeProps) {
   const [editing, setEditing] = useState(false)
-  const [selectedStatus, setSelectedStatus] = useState(currentStatus)
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newStatus = e.target.value
-    setSelectedStatus(newStatus)
     setEditing(false)
-    onStatusChange(storeId, orderId, newStatus)
+    if (onStatusChange && storeId && orderId) {
+      onStatusChange(storeId, orderId, newStatus)
+    }
   }
 
+  // Static badge (used in order detail page)
+  if (readonly || !onStatusChange) {
+    return (
+      <span
+        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+          statusColors[currentStatus] || 'bg-gray-100 text-gray-800'
+        }`}
+      >
+        {currentStatus}
+      </span>
+    )
+  }
+
+  // Interactive badge (dashboard table)
   if (!editing) {
     return (
       <button
         onClick={() => setEditing(true)}
-        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer ${statusColors[currentStatus] || 'bg-gray-100 text-gray-800'}`}
+        className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer ${
+          statusColors[currentStatus] || 'bg-gray-100 text-gray-800'
+        }`}
       >
         {currentStatus}
       </button>
@@ -51,7 +69,7 @@ export default function StatusBadge({
 
   return (
     <select
-      value={selectedStatus}
+      value={currentStatus}
       onChange={handleChange}
       onBlur={() => setEditing(false)}
       autoFocus
