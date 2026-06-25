@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
+import MetricSparkline from './MetricSparkline'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
 
 const timePresets = [
   { label: 'Today', value: 'today' },
@@ -77,20 +78,25 @@ export default function OrdersStats({
     new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'MAD' }).format(val)
 
   const Trend = ({ value }: { value: number }) => {
-    if (value > 0) return <span className="flex items-center gap-0.5 text-green-600 text-xs"><ArrowUp size={12} />{value.toFixed(1)}%</span>
-    if (value < 0) return <span className="flex items-center gap-0.5 text-red-600 text-xs"><ArrowDown size={12} />{Math.abs(value).toFixed(1)}%</span>
+    if (value > 0)
+      return <span className="flex items-center gap-0.5 text-[#008060] text-xs"><ArrowUp size={12} />{value.toFixed(1)}%</span>
+    if (value < 0)
+      return <span className="flex items-center gap-0.5 text-red-600 text-xs"><ArrowDown size={12} />{Math.abs(value).toFixed(1)}%</span>
     return <span className="flex items-center gap-0.5 text-gray-400 text-xs"><Minus size={12} />0%</span>
   }
 
+  // Prepare sparkline data (just the currentChartData with value field)
+  const sparklineData = stats.currentChartData || []
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 mb-6">
+    <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] p-5 mb-6">
       {/* Top controls: Date presets + Store filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={selectedPeriod}
             onChange={(e) => onPeriodChange(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+            className="border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm text-[#303030]"
           >
             {timePresets.map(p => (
               <option key={p.value} value={p.value}>{p.label}</option>
@@ -108,11 +114,11 @@ export default function OrdersStats({
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">Store:</span>
+          <span className="text-sm text-[#616161]">Store:</span>
           <select
             value={selectedStore}
             onChange={(e) => onStoreChange(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+            className="border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm text-[#303030]"
           >
             {allBrands.map(b => (
               <option key={b.id} value={b.id}>{b.name}</option>
@@ -121,44 +127,64 @@ export default function OrdersStats({
         </div>
       </div>
 
-      {/* Metric cards – clickable selectors */}
-      <div className="grid grid-cols-3 gap-4 mb-5">
-        <button
+      {/* Metric cards with sparklines */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        {/* Orders */}
+        <div
           onClick={() => setSelectedMetric('orders')}
-          className={`text-left bg-gray-50 rounded-lg p-4 border-2 transition-colors ${
-            selectedMetric === 'orders' ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'
+          className={`bg-white border rounded-lg p-4 cursor-pointer transition-all ${
+            selectedMetric === 'orders' ? 'border-[#008060] shadow-sm' : 'border-[#E3E3E3] hover:shadow-sm'
           }`}
         >
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Orders</p>
-          <p className="text-2xl font-semibold mt-1">{stats.orders}</p>
-          <div className="mt-1"><Trend value={stats.ordersGrowth} /></div>
-        </button>
-        <button
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs text-[#616161] uppercase tracking-wide">Orders</p>
+              <p className="text-2xl font-semibold text-[#303030] mt-1">{stats.orders}</p>
+              <div className="mt-1"><Trend value={stats.ordersGrowth} /></div>
+            </div>
+            <MetricSparkline data={sparklineData} />
+          </div>
+        </div>
+
+        {/* Total Sales */}
+        <div
           onClick={() => setSelectedMetric('sales')}
-          className={`text-left bg-gray-50 rounded-lg p-4 border-2 transition-colors ${
-            selectedMetric === 'sales' ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'
+          className={`bg-white border rounded-lg p-4 cursor-pointer transition-all ${
+            selectedMetric === 'sales' ? 'border-[#008060] shadow-sm' : 'border-[#E3E3E3] hover:shadow-sm'
           }`}
         >
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sales</p>
-          <p className="text-2xl font-semibold mt-1">{formatCurrency(stats.totalSales)}</p>
-          <div className="mt-1"><Trend value={stats.salesGrowth} /></div>
-        </button>
-        <button
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs text-[#616161] uppercase tracking-wide">Total Sales</p>
+              <p className="text-2xl font-semibold text-[#303030] mt-1">{formatCurrency(stats.totalSales)}</p>
+              <div className="mt-1"><Trend value={stats.salesGrowth} /></div>
+            </div>
+            <MetricSparkline data={sparklineData} />
+          </div>
+        </div>
+
+        {/* Sessions */}
+        <div
           onClick={() => setSelectedMetric('sessions')}
-          className={`text-left bg-gray-50 rounded-lg p-4 border-2 transition-colors ${
-            selectedMetric === 'sessions' ? 'border-blue-500 bg-blue-50' : 'border-transparent hover:bg-gray-100'
+          className={`bg-white border rounded-lg p-4 cursor-pointer transition-all ${
+            selectedMetric === 'sessions' ? 'border-[#008060] shadow-sm' : 'border-[#E3E3E3] hover:shadow-sm'
           }`}
         >
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Sessions</p>
-          <p className="text-2xl font-semibold mt-1">{stats.sessions}</p>
-          <div className="mt-1"><Trend value={stats.sessionsGrowth} /></div>
-        </button>
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs text-[#616161] uppercase tracking-wide">Sessions</p>
+              <p className="text-2xl font-semibold text-[#303030] mt-1">{stats.sessions}</p>
+              <div className="mt-1"><Trend value={stats.sessionsGrowth} /></div>
+            </div>
+            <MetricSparkline data={sparklineData} />
+          </div>
+        </div>
       </div>
 
-      {/* Chart */}
+      {/* Main chart */}
       {isLoading && (
         <div className="flex justify-center py-12">
-          <div className="animate-spin h-6 w-6 border-b-2 border-blue-600 rounded-full" />
+          <div className="animate-spin h-6 w-6 border-b-2 border-[#008060] rounded-full" />
         </div>
       )}
       {error && <p className="text-red-500 py-4">Failed to load stats</p>}
@@ -166,7 +192,7 @@ export default function OrdersStats({
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F1F1" />
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 12 }}
@@ -175,12 +201,12 @@ export default function OrdersStats({
                 }
               />
               <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }} />
+              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #E3E3E3' }} />
               <Line
                 data={stats.currentChartData}
                 type="monotone"
                 dataKey="value"
-                stroke="#2563eb"
+                stroke="#008060"
                 strokeWidth={2}
                 dot={false}
                 name="Current period"
@@ -190,7 +216,7 @@ export default function OrdersStats({
                   data={stats.previousChartData}
                   type="monotone"
                   dataKey="value"
-                  stroke="#94a3b8"
+                  stroke="#9CA3AF"
                   strokeWidth={2}
                   strokeDasharray="5 5"
                   dot={false}

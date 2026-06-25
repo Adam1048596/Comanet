@@ -278,8 +278,12 @@ export async function GET(request: NextRequest) {
 
   let allOrders = results.flat()
   allOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  // Added total for pagination
+  const total = allOrders.length
   const paginated = allOrders.slice(offset, offset + limit)
-  return NextResponse.json(paginated)
+
+  return NextResponse.json({ orders: paginated, total })
 }
 
 // ---------- PUT handler (update status) ----------
