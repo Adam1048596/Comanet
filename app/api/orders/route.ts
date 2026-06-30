@@ -7,7 +7,7 @@ const STORES = [
   { id: '3', name: 'Gamarde' },
   { id: '4', name: 'Alphascience' },
   { id: '5', name: 'Ainhoa' },
-  { id: '6', name: 'Hostinger' },
+  { id: '6', name: 'cygne' },
 ]
 
 // ---------- Date helpers ----------

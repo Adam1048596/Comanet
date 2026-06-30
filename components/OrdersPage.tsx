@@ -62,7 +62,7 @@ export default function OrdersPage() {
 
   // ----- filter state -----
   const [selectedPeriod, setSelectedPeriod] = useState('30d')
-  const [selectedStore, setSelectedStore] = useState('all')
+  const [selectedStore, setSelectedStore] = useState('all')   // <-- new store filter for orders
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -104,12 +104,50 @@ export default function OrdersPage() {
   // ----- Render -----
   return (
     <>
+      {/* --- Page header --- */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold text-[#303030]">Orders</h1>
+        <div className="flex items-center gap-3">
+          <button className="flex items-center gap-1.5 border border-[#E3E3E3] rounded-md px-4 py-2 text-sm text-[#303030] hover:bg-gray-50">
+            Export
+          </button>
+          <button className="flex items-center gap-1.5 bg-[#008060] text-white rounded-md px-4 py-2 text-sm font-medium">
+            <Plus size={16} /> Create order
+          </button>
+        </div>
+      </div>
+
+      {/* --- Summary cards (independent of table filters) --- */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] p-4">
+          <p className="text-xs text-[#616161] uppercase tracking-wide">Today's Orders</p>
+          <p className="text-2xl font-bold mt-1">{summary.todayOrders}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] p-4">
+          <p className="text-xs text-[#616161] uppercase tracking-wide">This Week's Orders</p>
+          <p className="text-2xl font-bold mt-1">{summary.weekOrders}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] p-4">
+          <p className="text-xs text-[#616161] uppercase tracking-wide">Last 30 Days</p>
+          <p className="text-2xl font-bold mt-1">{summary.monthOrders}</p>
+        </div>
+      </div>
+
+      {/* --- Analytics card --- */}
+      <OrdersStats
+        selectedStore={selectedStore}
+        onStoreChange={setSelectedStore}
+        selectedPeriod={selectedPeriod}
+        onPeriodChange={setSelectedPeriod}
+      />
+
       {/* --- Table or Detail view --- */}
       {view === 'list' ? (
         <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] overflow-hidden">
           {/* Table filter bar */}
           <div className="flex items-center justify-between px-6 py-3 border-b border-[#E3E3E3]">
             <div className="flex items-center gap-4">
+              {/* Status filter */}
               <div className="flex rounded-md border border-[#E3E3E3] overflow-hidden">
                 {['all', 'pending', 'processing', 'completed'].map(s => (
                   <button
@@ -121,6 +159,23 @@ export default function OrdersPage() {
                   </button>
                 ))}
               </div>
+
+              {/* Brand filter (store) */}
+              <select
+                value={selectedStore}
+                onChange={(e) => setSelectedStore(e.target.value)}
+                className="border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm"
+              >
+                <option value="all">All Stores</option>
+                <option value="1">Auracos</option>
+                <option value="2">Makari</option>
+                <option value="3">Gamarde</option>
+                <option value="4">Alphascience</option>
+                <option value="5">Ainhoa</option>
+                <option value="6">Hostinger</option>
+              </select>
+
+              {/* Search */}
               <div className="relative">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
