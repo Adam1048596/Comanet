@@ -81,15 +81,7 @@ export default function MainApp() {
             )
           })}
 
-          <div className="px-4 mt-4">
-            <p className="text-xs uppercase tracking-widest text-gray-400 mb-2">Sales Channels</p>
-            <a href="#" className="flex items-center gap-2 text-gray-300 hover:text-white text-sm py-1">Online Store</a>
-            <a href="#" className="flex items-center gap-2 text-gray-300 hover:text-white text-sm py-1">Shopify POS</a>
-          </div>
-          <div className="px-4 mt-4">
-            <p className="text-xs uppercase tracking-widest text-gray-400 mb-2">Apps</p>
-            <a href="#" className="flex items-center gap-2 text-gray-300 hover:text-white text-sm py-1">Analytics</a>
-          </div>
+
         </nav>
 
         <div className="p-4 border-t border-gray-700">
