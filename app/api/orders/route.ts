@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fetchAllOrders, extractStoreName } from '@/utils/fetch-orders'
 
 const STORES = [
-  { id: '1' }, { id: '2' }, { id: '3' },
-  { id: '4' }, { id: '5' }, { id: '6' },
+  { id: '1', name: 'Auracos' },
+  { id: '2', name: 'Makari' },
+  { id: '3', name: 'Gamarde' },
+  { id: '4', name: 'Alphascience' },
+  { id: '5', name: 'Ainhoa' },
+  { id: '6', name: 'Hostinger' },
 ]
 
 // ---------- Date helpers ----------
@@ -69,12 +73,126 @@ function getPreviousPeriod(cr: { after?: string; before?: string }) {
   return { after: new Date(a - len).toISOString(), before: cr.after }
 }
 
+// ---------- Product helpers ----------
+async function fetchWooProducts(storeId: string, page = 1): Promise<any[]> {
+  const platform = process.env[`STORE${storeId}_PLATFORM`]
+  const baseUrl = process.env[`STORE${storeId}_BASE_URL`]
+  const key = process.env[`STORE${storeId}_CONSUMER_KEY`]
+  const secret = process.env[`STORE${storeId}_CONSUMER_SECRET`]
+
+  if (!platform || !baseUrl || !key || !secret) return []
+
+  const auth = Buffer.from(`${key}:${secret}`).toString('base64')
+  const url = `${baseUrl}/wp-json/wc/v3/products?per_page=100&page=${page}`
+
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Basic ${auth}` } })
+    if (!res.ok) return []
+    const products = await res.json()
+    return products.map((p: any) => ({
+      id: p.id.toString(),
+      name: p.name,
+      sku: p.sku || 'N/A',
+      price: parseFloat(p.price || '0'),
+      stock: p.stock_quantity ?? 0,
+      status: p.status,
+      category: p.categories?.[0]?.name || 'Uncategorized',
+      image: p.images?.[0]?.src || null,
+      lastUpdated: p.date_modified || p.date_created,
+      _storeId: storeId,
+      _storeName: STORES.find(s => s.id === storeId)?.name || '',
+      stores: [STORES.find(s => s.id === storeId)?.name || ''],
+    }))
+  } catch (err) {
+    console.error(`Error fetching products from store ${storeId}:`, err)
+    return []
+  }
+}
+
+async function getAllProducts() {
+  const allProductsLists = await Promise.all(
+    STORES.map(async (store) => {
+      let page = 1
+      let allProducts: any[] = []
+      let hasMore = true
+      while (hasMore && page <= 10) {
+        const products = await fetchWooProducts(store.id, page)
+        if (products.length === 0 || products.length < 100) hasMore = false
+        allProducts.push(...products)
+        page++
+      }
+      return allProducts
+    })
+  )
+  let allProducts = allProductsLists.flat()
+
+  // Merge products with same name (dedup)
+  const mergedMap = new Map<string, any>()
+  allProducts.forEach(p => {
+    const key = p.name.toLowerCase().trim()
+    if (mergedMap.has(key)) {
+      const existing = mergedMap.get(key)
+      existing.stores = [...new Set([...existing.stores, ...p.stores])]
+    } else {
+      mergedMap.set(key, { ...p })
+    }
+  })
+  return Array.from(mergedMap.values())
+}
+
 // ---------- GET handler ----------
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const type = searchParams.get('type') || 'list'
 
-  // ----- Detail -----
+  // ----- Products Stats -----
+  if (type === 'products-stats') {
+    const products = await getAllProducts()
+    return NextResponse.json({
+      total: products.length,
+      active: products.filter(p => p.status === 'publish').length,
+      outOfStock: products.filter(p => p.stock === 0).length,
+      draft: products.filter(p => p.status === 'draft').length,
+      lowStock: products.filter(p => p.stock > 0 && p.stock < 5).length,
+    })
+  }
+
+  // ----- Products List -----
+  if (type === 'products-list') {
+    const products = await getAllProducts()
+    const search = searchParams.get('search') || ''
+    const brand = searchParams.get('brand') || 'all'
+    const category = searchParams.get('category') || 'all'
+    const stockStatus = searchParams.get('stockStatus') || 'all'
+    const storeIdFilter = searchParams.get('storeId') || 'all'
+    const offset = parseInt(searchParams.get('offset') || '0')
+    const limit = parseInt(searchParams.get('limit') || '20')
+
+    let filtered = products
+    if (brand !== 'all') filtered = filtered.filter(p => p._storeName?.toLowerCase() === brand.toLowerCase())
+    if (category !== 'all') filtered = filtered.filter(p => p.category?.toLowerCase() === category.toLowerCase())
+    if (stockStatus === 'in-stock') filtered = filtered.filter(p => p.stock > 0)
+    if (stockStatus === 'out-of-stock') filtered = filtered.filter(p => p.stock === 0)
+    if (stockStatus === 'low-stock') filtered = filtered.filter(p => p.stock > 0 && p.stock < 5)
+    if (storeIdFilter !== 'all') filtered = filtered.filter(p => p.stores?.includes(storeIdFilter))
+    if (search) filtered = filtered.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.includes(search))
+
+    const total = filtered.length
+    const paginated = filtered.slice(offset, offset + limit)
+    return NextResponse.json({ products: paginated, total })
+  }
+
+  // ----- Products Detail -----
+  if (type === 'products-detail') {
+    const productId = searchParams.get('productId')
+    const storeId = searchParams.get('storeId')
+    if (!productId || !storeId) return NextResponse.json({ error: 'Missing params' }, { status: 400 })
+    const raw = await fetchWooProducts(storeId)
+    const product = raw.find(p => p.id === productId)
+    return product ? NextResponse.json(product) : NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  // ----- Orders Detail -----
   if (type === 'detail') {
     const storeId = searchParams.get('storeId')
     const orderId = searchParams.get('orderId')
@@ -153,7 +271,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // ----- Stats -----
+  // ----- Orders Stats -----
   if (type === 'stats') {
     const period = searchParams.get('period') || 'today'
     const storeId = searchParams.get('storeId') || 'all'
@@ -163,19 +281,19 @@ export async function GET(request: NextRequest) {
 
     const dateRange = getDateRange(period, start, end)
     const previousDateRange = getPreviousPeriod(dateRange)
-    const storesToFetch = storeId === 'all' ? STORES : STORES.filter(s => s.id === storeId)
+    const storesToFetch = storeId === 'all' ? STORES.map(s => s.id) : [storeId]
 
     async function fetchFor(dr?: { after?: string; before?: string }) {
-      const results = await Promise.all(storesToFetch.map(async (store) => {
-        const platform = process.env[`STORE${store.id}_PLATFORM`] || ''
-        const baseUrl = process.env[`STORE${store.id}_BASE_URL`] || ''
+      const results = await Promise.all(storesToFetch.map(async (id) => {
+        const platform = process.env[`STORE${id}_PLATFORM`] || ''
+        const baseUrl = process.env[`STORE${id}_BASE_URL`] || ''
         if (!platform || !baseUrl) return []
         const creds = {
-          key: process.env[`STORE${store.id}_CONSUMER_KEY`],
-          secret: process.env[`STORE${store.id}_CONSUMER_SECRET`],
-          token: process.env[`STORE${store.id}_ACCESS_TOKEN`],
+          key: process.env[`STORE${id}_CONSUMER_KEY`],
+          secret: process.env[`STORE${id}_CONSUMER_SECRET`],
+          token: process.env[`STORE${id}_ACCESS_TOKEN`],
         }
-        return fetchAllOrders(store.id, platform, baseUrl, creds, dr)
+        return fetchAllOrders(id, platform, baseUrl, creds, dr)
       }))
       return results.flat()
     }
@@ -200,7 +318,6 @@ export async function GET(request: NextRequest) {
     const ordersGrowth = prevOrders ? ((totalOrders - prevOrders) / prevOrders) * 100 : totalOrders ? 100 : 0
     const salesGrowth = prevSales ? ((totalSales - prevSales) / prevSales) * 100 : totalSales ? 100 : 0
 
-    // Explicitly typed aggregate function
     function aggregate(arr: any[], field: 'total' | 'count'): { date: string; value: number }[] {
       const map: Record<string, number> = {}
       arr.forEach(o => {
@@ -212,7 +329,6 @@ export async function GET(request: NextRequest) {
       return Object.entries(map).map(([date, val]) => ({ date, value: val }))
     }
 
-    // Typed chart data arrays
     let curData: { date: string; value: number }[] = []
     let prvData: { date: string; value: number }[] = []
 
@@ -222,7 +338,7 @@ export async function GET(request: NextRequest) {
     } else if (metric === 'orders') {
       curData = aggregate(cur, 'count')
       prvData = aggregate(prv, 'count')
-    } // sessions stays empty arrays
+    }
 
     if (previousDateRange && prvData.length) {
       const offset = new Date(dateRange!.after!).getTime() - new Date(previousDateRange.after!).getTime()
@@ -244,7 +360,7 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  // ----- List (default) -----
+  // ----- Orders List (default) -----
   const offset = parseInt(searchParams.get('offset') || '0')
   const limit = parseInt(searchParams.get('limit') || '20')
   const storeId = searchParams.get('storeId') || 'all'
@@ -253,21 +369,21 @@ export async function GET(request: NextRequest) {
   const end = searchParams.get('end') || undefined
 
   const dateRange = getDateRange(period, start, end)
-  const storesToFetch = storeId === 'all' ? STORES : STORES.filter(s => s.id === storeId)
+  const storesToFetch = storeId === 'all' ? STORES.map(s => s.id) : [storeId]
 
-  const results = await Promise.all(storesToFetch.map(async (store) => {
-    const platform = process.env[`STORE${store.id}_PLATFORM`] || ''
-    const baseUrl = process.env[`STORE${store.id}_BASE_URL`] || ''
+  const results = await Promise.all(storesToFetch.map(async (id) => {
+    const platform = process.env[`STORE${id}_PLATFORM`] || ''
+    const baseUrl = process.env[`STORE${id}_BASE_URL`] || ''
     if (!platform || !baseUrl) return []
     const creds = {
-      key: process.env[`STORE${store.id}_CONSUMER_KEY`],
-      secret: process.env[`STORE${store.id}_CONSUMER_SECRET`],
-      token: process.env[`STORE${store.id}_ACCESS_TOKEN`],
+      key: process.env[`STORE${id}_CONSUMER_KEY`],
+      secret: process.env[`STORE${id}_CONSUMER_SECRET`],
+      token: process.env[`STORE${id}_ACCESS_TOKEN`],
     }
-    const orders = await fetchAllOrders(store.id, platform, baseUrl, creds, dateRange)
+    const orders = await fetchAllOrders(id, platform, baseUrl, creds, dateRange)
     return orders.map((order: any) => ({
       ...order,
-      _storeId: store.id,
+      _storeId: id,
       _storeName: extractStoreName(baseUrl),
       orderNumber: order.number || order.order_number || order.name,
       total: order.total || order.current_total_price,
@@ -278,17 +394,64 @@ export async function GET(request: NextRequest) {
 
   let allOrders = results.flat()
   allOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-
-  // Added total for pagination
   const total = allOrders.length
   const paginated = allOrders.slice(offset, offset + limit)
 
   return NextResponse.json({ orders: paginated, total })
 }
 
-// ---------- PUT handler (update status) ----------
+// ---------- PUT handler (update status + product update) ----------
 export async function PUT(request: NextRequest) {
-  const { storeId, orderId, status } = await request.json()
+  const body = await request.json()
+
+  // ----- Product Update -----
+  if (body.type === 'product-update') {
+    const { storeId, productId, regular_price, sale_price, stock_quantity, stock_status } = body
+    if (!storeId || !productId) {
+      return NextResponse.json({ error: 'Missing storeId or productId' }, { status: 400 })
+    }
+
+    const platform = process.env[`STORE${storeId}_PLATFORM`]
+    const baseUrl = process.env[`STORE${storeId}_BASE_URL`]
+    const key = process.env[`STORE${storeId}_CONSUMER_KEY`]
+    const secret = process.env[`STORE${storeId}_CONSUMER_SECRET`]
+
+    if (!platform || !baseUrl || !key || !secret) {
+      return NextResponse.json({ error: 'Store not configured' }, { status: 404 })
+    }
+
+    try {
+      const auth = Buffer.from(`${key}:${secret}`).toString('base64')
+      const url = `${baseUrl}/wp-json/wc/v3/products/${productId}`
+      const updateData: any = {}
+
+      if (regular_price !== undefined) updateData.regular_price = String(regular_price)
+      if (sale_price !== undefined) updateData.sale_price = String(sale_price)
+      if (stock_quantity !== undefined) updateData.stock_quantity = stock_quantity
+      if (stock_status !== undefined) updateData.stock_status = stock_status
+
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Basic ${auth}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        return NextResponse.json({ error: 'Failed to update product', details: err }, { status: res.status })
+      }
+
+      return NextResponse.json({ success: true })
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 })
+    }
+  }
+
+  // ----- Existing order status update -----
+  const { storeId, orderId, status } = body
 
   if (!storeId || !orderId || !status) {
     return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
@@ -303,7 +466,7 @@ export async function PUT(request: NextRequest) {
 
   let apiUrl = ''
   const headers: Record<string, string> = {}
-  const body: any = {}
+  const bodyData: any = {}
 
   if (platform === 'woocommerce') {
     const key = process.env[`STORE${storeId}_CONSUMER_KEY`]
@@ -312,20 +475,20 @@ export async function PUT(request: NextRequest) {
     headers['Authorization'] = `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`
     headers['Content-Type'] = 'application/json'
     apiUrl = `${baseUrl}/wp-json/wc/v3/orders/${orderId}`
-    body.status = status
+    bodyData.status = status
   } else if (platform === 'shopify') {
     const token = process.env[`STORE${storeId}_ACCESS_TOKEN`]
     if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 500 })
     headers['X-Shopify-Access-Token'] = token
     headers['Content-Type'] = 'application/json'
     apiUrl = `https://${baseUrl}/admin/api/2024-07/orders/${orderId}.json`
-    body.order = { id: orderId, financial_status: status }
+    bodyData.order = { id: orderId, financial_status: status }
   } else {
     return NextResponse.json({ error: 'Unknown platform' }, { status: 400 })
   }
 
   try {
-    const res = await fetch(apiUrl, { method: 'PUT', headers, body: JSON.stringify(body) })
+    const res = await fetch(apiUrl, { method: 'PUT', headers, body: JSON.stringify(bodyData) })
     const data = await res.json()
     if (!res.ok) return NextResponse.json({ error: 'Update failed', details: data }, { status: res.status })
     return NextResponse.json({ success: true, data })

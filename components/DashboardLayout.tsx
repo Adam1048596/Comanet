@@ -4,14 +4,11 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import {
-  LayoutDashboard, ShoppingCart, Package, Users, BarChart3, Settings, LogOut,
-  Search, Bell,
-} from 'lucide-react'
+import { LayoutDashboard, ShoppingCart, Package, Users, BarChart3, Settings, LogOut, Search, Bell, } from 'lucide-react'
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
-  { icon: ShoppingCart, label: 'Orders', href: '/orders', active: true, badge: 3181 },
+  { icon: ShoppingCart, label: 'Orders', href: '/orders' },
   { icon: Package, label: 'Products', href: '#' },
   { icon: Users, label: 'Customers', href: '#' },
   { icon: BarChart3, label: 'Analytics', href: '#' },
@@ -21,7 +18,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const supabase = createClient()
   const [email, setEmail] = useState('')
-  const [sidebarOpen] = useState(true) // can be toggled later
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -53,16 +49,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               key={idx}
               href={item.href}
               className={`flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md text-sm font-medium transition-colors ${
-                item.active
-                  ? 'bg-[#008060] text-white'
+                item.href === '/orders' // just an example; you can check active path later
+                  ? 'text-gray-300 hover:bg-gray-700 hover:text-white'
                   : 'text-gray-300 hover:bg-gray-700 hover:text-white'
               }`}
             >
               <item.icon size={18} />
               <span>{item.label}</span>
-              {item.badge && (
+              {item.label === 'Orders' && (
                 <span className="ml-auto bg-gray-600 text-gray-200 text-xs rounded-full px-2 py-0.5">
-                  {item.badge.toLocaleString()}
+                  3,181
                 </span>
               )}
             </Link>

@@ -1,0 +1,230 @@
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import OrdersStats from './OrdersStats'
+import StatusBadge from './StatusBadge'
+import OrderDetailView from './OrderDetailView'
+import {
+  ChevronDown, ChevronLeft, ChevronRight, Plus, Search,
+} from 'lucide-react'
+
+// ---------- API helpers ----------
+async function fetchOrdersPage(page: number, period: string, storeId: string, limit = 20) {
+  const offset = (page - 1) * limit
+  const params = new URLSearchParams({
+    type: 'list',
+    offset: String(offset),
+    limit: String(limit),
+    period,
+    storeId,
+  })
+  const res = await fetch(`/api/orders?${params}`)
+  if (!res.ok) throw new Error('Failed to load orders')
+  return res.json()
+}
+
+// Live summary stats (independent of table filters)
+function useSummaryStats() {
+  const { data: today } = useQuery({
+    queryKey: ['summary-today'],
+    queryFn: async () => {
+      const res = await fetch('/api/orders?type=stats&period=today&storeId=all&metric=orders')
+      return res.json()
+    },
+  })
+  const { data: week } = useQuery({
+    queryKey: ['summary-this_week'],
+    queryFn: async () => {
+      const res = await fetch('/api/orders?type=stats&period=this_week&storeId=all&metric=orders')
+      return res.json()
+    },
+  })
+  const { data: month } = useQuery({
+    queryKey: ['summary-30d'],
+    queryFn: async () => {
+      const res = await fetch('/api/orders?type=stats&period=30d&storeId=all&metric=orders')
+      return res.json()
+    },
+  })
+  return {
+    todayOrders: today?.orders ?? 0,
+    weekOrders: week?.orders ?? 0,
+    monthOrders: month?.orders ?? 0,
+  }
+}
+
+export default function OrdersPage() {
+  // ----- view state -----
+  const [view, setView] = useState<'list' | 'detail'>('list')
+  const [selectedOrder, setSelectedOrder] = useState<any>(null)
+  const [selectedOrderStore, setSelectedOrderStore] = useState<string>('')
+
+  // ----- filter state -----
+  const [selectedPeriod, setSelectedPeriod] = useState('30d')
+  const [selectedStore, setSelectedStore] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const limit = 20
+
+  // ----- data fetching -----
+  const { data: ordersData, isLoading, error } = useQuery({
+    queryKey: ['all-orders', selectedPeriod, selectedStore, currentPage, searchTerm],
+    queryFn: () => fetchOrdersPage(currentPage, selectedPeriod, selectedStore, limit),
+    refetchInterval: 30000,
+  })
+
+  const orders = ordersData?.orders || []
+  const totalOrders = ordersData?.total || 0
+  const totalPages = Math.ceil(totalOrders / limit)
+
+  const filteredOrders = statusFilter === 'all'
+    ? orders
+    : orders.filter((o: any) => o.status === statusFilter)
+
+  const summary = useSummaryStats()
+
+  // ----- handlers -----
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) setCurrentPage(page)
+  }
+
+  const handleRowClick = (order: any) => {
+    setSelectedOrder(order)
+    setSelectedOrderStore(order._storeId)
+    setView('detail')
+  }
+
+  const handleBack = () => {
+    setView('list')
+    setSelectedOrder(null)
+  }
+
+  // ----- Render -----
+  return (
+    <>
+      {/* --- Table or Detail view --- */}
+      {view === 'list' ? (
+        <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] overflow-hidden">
+          {/* Table filter bar */}
+          <div className="flex items-center justify-between px-6 py-3 border-b border-[#E3E3E3]">
+            <div className="flex items-center gap-4">
+              <div className="flex rounded-md border border-[#E3E3E3] overflow-hidden">
+                {['all', 'pending', 'processing', 'completed'].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={`px-3 py-1.5 text-sm capitalize ${statusFilter === s ? 'bg-[#008060] text-white' : 'bg-white text-[#303030] hover:bg-gray-50'}`}
+                  >
+                    {s === 'all' ? 'All' : s}
+                  </button>
+                ))}
+              </div>
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search orders..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
+                  className="pl-9 pr-4 py-1.5 border border-[#E3E3E3] rounded-md text-sm focus:ring-1 focus:ring-[#008060]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Table */}
+          {isLoading ? (
+            <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-2 border-gray-300 border-t-[#008060] rounded-full" /></div>
+          ) : error ? (
+            <div className="text-center py-12 text-red-500">Failed to load orders</div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-gray-50 text-left text-xs font-medium text-[#616161] uppercase tracking-wider border-b border-[#E3E3E3]">
+                    <tr>
+                      <th className="px-4 py-3"><input type="checkbox" /></th>
+                      <th className="px-4 py-3">Order</th>
+                      <th className="px-4 py-3">Flags</th>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Customer</th>
+                      <th className="px-4 py-3">Channel</th>
+                      <th className="px-4 py-3">Total</th>
+                      <th className="px-4 py-3">Payment Status</th>
+                      <th className="px-4 py-3">Fulfillment Status</th>
+                      <th className="px-4 py-3">Items</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E3E3E3]">
+                    {filteredOrders.map((order: any) => (
+                      <tr
+                        key={`${order._storeId}-${order.id}`}
+                        className="hover:bg-gray-50 cursor-pointer transition-colors h-[52px]"
+                        onClick={() => handleRowClick(order)}
+                      >
+                        <td className="px-4 py-3"><input type="checkbox" onClick={(e) => e.stopPropagation()} /></td>
+                        <td className="px-4 py-3 text-sm font-medium text-[#008060]">#{order.orderNumber}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                            order.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-[#616161]">
+                          {new Date(order.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-[#303030]">
+                          {order.billing?.first_name || order.customer?.first_name || ''}{' '}
+                          {order.billing?.last_name || order.customer?.last_name || ''}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-[#616161]">{order._storeName}</td>
+                        <td className="px-4 py-3 text-sm">{order.total}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            order.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
+                            order.payment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {order.payment_status || 'pending'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {order.status === 'completed' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Fulfilled</span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Unfulfilled</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm">{order.line_items?.length || order.items_count || 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              <div className="flex items-center justify-between px-6 py-3 border-t border-[#E3E3E3] text-sm">
+                <span className="text-[#616161]">
+                  {totalOrders > 0 ? `${(currentPage - 1) * limit + 1}-${Math.min(currentPage * limit, totalOrders)} of ${totalOrders}` : '0 orders'}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button disabled={currentPage === 1} onClick={() => goToPage(currentPage - 1)} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"><ChevronLeft size={18} /></button>
+                  <span className="px-2">{currentPage}</span>
+                  <button disabled={currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"><ChevronRight size={18} /></button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        /* Detail view */
+        <OrderDetailView order={selectedOrder} storeId={selectedOrderStore} onBack={handleBack} />
+      )}
+    </>
+  )
+}
