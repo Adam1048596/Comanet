@@ -114,7 +114,7 @@ export default function ProductsPage() {
           <option value="gamarde">Gamarde</option>
           <option value="alphascience">Alphascience</option>
           <option value="ainhoa">Ainhoa</option>
-          <option value="hostinger">Hostinger</option>
+          <option value="cygne">cygne</option>
         </select>
         <select value={category} onChange={e => setCategory(e.target.value)} className="border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm">
           <option value="all">All Categories</option>
@@ -136,7 +136,7 @@ export default function ProductsPage() {
           <option value="3">Gamarde</option>
           <option value="4">Alphascience</option>
           <option value="5">Ainhoa</option>
-          <option value="6">Hostinger</option>
+          <option value="6">Cygne</option>
         </select>
       </div>
 

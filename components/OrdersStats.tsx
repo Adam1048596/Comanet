@@ -27,7 +27,7 @@ const allBrands = [
   { id: '3', name: 'Gamarde' },
   { id: '4', name: 'Alphascience' },
   { id: '5', name: 'Ainhoa' },
-  { id: '6', name: 'Shopify Store' },
+  { id: '6', name: 'Cygne' },
 ]
 
 interface Props {
