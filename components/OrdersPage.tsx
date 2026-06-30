@@ -105,7 +105,7 @@ export default function OrdersPage() {
   return (
     <>
       {/* --- Page header --- */}
-      <div className="flex items-center justify-between">
+      {/* <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-[#303030]">Orders</h1>
         <div className="flex items-center gap-3">
           <button className="flex items-center gap-1.5 border border-[#E3E3E3] rounded-md px-4 py-2 text-sm text-[#303030] hover:bg-gray-50">
@@ -115,10 +115,10 @@ export default function OrdersPage() {
             <Plus size={16} /> Create order
           </button>
         </div>
-      </div>
+      </div> */}
 
       {/* --- Summary cards (independent of table filters) --- */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] p-4">
           <p className="text-xs text-[#616161] uppercase tracking-wide">Today's Orders</p>
           <p className="text-2xl font-bold mt-1">{summary.todayOrders}</p>
@@ -131,15 +131,15 @@ export default function OrdersPage() {
           <p className="text-xs text-[#616161] uppercase tracking-wide">Last 30 Days</p>
           <p className="text-2xl font-bold mt-1">{summary.monthOrders}</p>
         </div>
-      </div>
+      </div> */}
 
       {/* --- Analytics card --- */}
-      <OrdersStats
+      {/* <OrdersStats
         selectedStore={selectedStore}
         onStoreChange={setSelectedStore}
         selectedPeriod={selectedPeriod}
         onPeriodChange={setSelectedPeriod}
-      />
+      /> */}
 
       {/* --- Table or Detail view --- */}
       {view === 'list' ? (
