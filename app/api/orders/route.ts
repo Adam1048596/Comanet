@@ -7,8 +7,14 @@ const STORES = [
   { id: '3', name: 'Gamarde' },
   { id: '4', name: 'Alphascience' },
   { id: '5', name: 'Ainhoa' },
-  { id: '6', name: 'cygne' },
+  { id: '6', name: 'cygne' },   // corrected from Hostinger to cygne as in your latest file
 ]
+
+// ---------- Brand prefix map ----------
+const BRAND_PREFIX: Record<string, string> = {}
+STORES.forEach(s => {
+  BRAND_PREFIX[s.id] = s.name.substring(0, 2).toUpperCase()
+})
 
 // ---------- Date helpers ----------
 function getDateRange(period: string, start?: string, end?: string) {
@@ -192,74 +198,53 @@ export async function GET(request: NextRequest) {
     return product ? NextResponse.json(product) : NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
+  // ----- Export Orders (flattened line items) -----
+  if (type === 'export-orders') {
+    const storeId = searchParams.get('storeId') || 'all'
+    const period = searchParams.get('period') || '30d'
+    const start = searchParams.get('start') || undefined
+    const end = searchParams.get('end') || undefined
 
-// ----- Export Orders (flattened line items) -----
-if (type === 'export-orders') {
-  const storeId = searchParams.get('storeId') || 'all'
-  const period = searchParams.get('period') || '30d'
-  const start = searchParams.get('start') || undefined
-  const end = searchParams.get('end') || undefined
+    const dateRange = getDateRange(period, start, end)
+    const storesToFetch = storeId === 'all' ? STORES.map(s => s.id) : [storeId]
 
-  const dateRange = getDateRange(period, start, end)
-  const storesToFetch = storeId === 'all' ? STORES.map(s => s.id) : [storeId]
-
-  // Fetch all orders from required stores (no pagination limit – use the same fetchAllOrders with a high limit)
-  const results = await Promise.all(storesToFetch.map(async (id) => {
-    const platform = process.env[`STORE${id}_PLATFORM`] || ''
-    const baseUrl = process.env[`STORE${id}_BASE_URL`] || ''
-    if (!platform || !baseUrl) return []
-    const creds = {
-      key: process.env[`STORE${id}_CONSUMER_KEY`],
-      secret: process.env[`STORE${id}_CONSUMER_SECRET`],
-      token: process.env[`STORE${id}_ACCESS_TOKEN`],
-    }
-    // Use a high maxOrders to get everything (e.g., 10000)
-    const orders = await fetchAllOrders(id, platform, baseUrl, creds, dateRange, 10000)
-    return orders.map((order: any) => ({
-      ...order,
-      _storeId: id,
-      _storeName: extractStoreName(baseUrl),
-      orderNumber: order.number || order.order_number || order.name,
-      total: order.total || order.current_total_price,
-      createdAt: order.date_created || order.created_at,
-      status: order.status || order.financial_status,
+    const results = await Promise.all(storesToFetch.map(async (id) => {
+      const platform = process.env[`STORE${id}_PLATFORM`] || ''
+      const baseUrl = process.env[`STORE${id}_BASE_URL`] || ''
+      if (!platform || !baseUrl) return []
+      const creds = {
+        key: process.env[`STORE${id}_CONSUMER_KEY`],
+        secret: process.env[`STORE${id}_CONSUMER_SECRET`],
+        token: process.env[`STORE${id}_ACCESS_TOKEN`],
+      }
+      const orders = await fetchAllOrders(id, platform, baseUrl, creds, dateRange, 10000)
+      return orders.map((order: any) => ({
+        ...order,
+        _storeId: id,
+        _storeName: extractStoreName(baseUrl),
+        orderNumber: order.number || order.order_number || order.name,
+        total: order.total || order.current_total_price,
+        createdAt: order.date_created || order.created_at,
+        status: order.status || order.financial_status,
+      }))
     }))
-  }))
 
-  let allOrders = results.flat()
-  allOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    let allOrders = results.flat()
+    allOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
-  // Flatten line items
-  const exportRows: any[] = []
-  allOrders.forEach(order => {
-    const items = order.line_items || []
-    if (items.length === 0) {
-      // order with no line items? rare, but include as one row
-      exportRows.push({
-        orderNumber: order.orderNumber,
-        date: order.createdAt,
-        sku: '',
-        productName: '',
-        quantity: 0,
-        unitPrice: 0,
-        lineTotal: 0,
-        orderTotal: order.total,
-        status: order.status,
-        customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
-        city: order.billing?.city || '',
-        bl: '',
-        facture: '',
-      })
-    } else {
-      items.forEach((item: any) => {
+    // Flatten line items
+    const exportRows: any[] = []
+    allOrders.forEach(order => {
+      const prefix = BRAND_PREFIX[order._storeId] || ''   // <-- brand prefix
+      const items = order.line_items || []
+      if (items.length === 0) {
         exportRows.push({
-          orderNumber: order.orderNumber,
+          orderNumber: `${prefix}${order.orderNumber}`,
           date: order.createdAt,
-          sku: item.sku || '',
-          productName: item.name || '',
-          quantity: item.quantity,
-          unitPrice: item.price,
-          lineTotal: item.total,
+          skuName: '',
+          quantity: 0,
+          unitPrice: 0,
+          lineTotal: 0,
           orderTotal: order.total,
           status: order.status,
           customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
@@ -267,13 +252,28 @@ if (type === 'export-orders') {
           bl: '',
           facture: '',
         })
-      })
-    }
-  })
+      } else {
+        items.forEach((item: any) => {
+          exportRows.push({
+            orderNumber: `${prefix}${order.orderNumber}`,
+            date: order.createdAt,
+            skuName: item.name || item.sku || '',
+            quantity: item.quantity,
+            unitPrice: item.price,
+            lineTotal: item.total,
+            orderTotal: order.total,
+            status: order.status,
+            customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
+            city: order.billing?.city || '',
+            bl: '',
+            facture: '',
+          })
+        })
+      }
+    })
 
-  return NextResponse.json(exportRows)
-}
-
+    return NextResponse.json(exportRows)
+  }
 
   // ----- Orders Detail -----
   if (type === 'detail') {

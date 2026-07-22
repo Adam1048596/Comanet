@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import StatusBadge from './StatusBadge'
 import OrderDetailView from './OrderDetailView'
+import { formatOrderNumber } from '@/utils/brand-utils'
 import {
   ChevronLeft, ChevronRight, Plus, Search, Download
 } from 'lucide-react'
@@ -95,8 +96,7 @@ export default function OrdersPage() {
         header: [
           'orderNumber',
           'date',
-          'sku',
-          'productName',
+          'skuName',
           'quantity',
           'unitPrice',
           'lineTotal',
@@ -113,8 +113,7 @@ export default function OrdersPage() {
       const headerMapping: Record<string, string> = {
         orderNumber: 'Order number',
         date: 'Date',
-        sku: 'SKU',
-        productName: 'Name',
+        skuName: 'SKU Name',
         quantity: 'Quantity',
         unitPrice: 'Unit price',
         lineTotal: 'Total line',
@@ -251,7 +250,9 @@ export default function OrdersPage() {
                         onClick={() => handleRowClick(order)}
                       >
                         <td className="px-4 py-3"><input type="checkbox" onClick={(e) => e.stopPropagation()} /></td>
-                        <td className="px-4 py-3 text-sm font-medium text-[#008060]">#{order.orderNumber}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-[#008060]">
+                          #{formatOrderNumber(order)}
+                        </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <StatusBadge
                             storeId={order._storeId}
