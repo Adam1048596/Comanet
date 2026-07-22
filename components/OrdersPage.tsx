@@ -5,8 +5,9 @@ import { useState } from 'react'
 import StatusBadge from './StatusBadge'
 import OrderDetailView from './OrderDetailView'
 import {
-  ChevronLeft, ChevronRight, Plus, Search,
+  ChevronLeft, ChevronRight, Plus, Search, Download
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 // ---------- API helpers ----------
 async function fetchOrdersPage(page: number, period: string, storeId: string, limit = 20) {
@@ -33,10 +34,11 @@ export default function OrdersPage() {
 
   // ----- filter state -----
   const [selectedPeriod, setSelectedPeriod] = useState('30d')
-  const [selectedStore, setSelectedStore] = useState('all')   // store filter for orders
+  const [selectedStore, setSelectedStore] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
+  const [isExporting, setIsExporting] = useState(false)
   const limit = 20
 
   // ----- data fetching -----
@@ -74,6 +76,72 @@ export default function OrdersPage() {
     },
     onError: (err: Error) => alert('Status update failed: ' + err.message),
   })
+
+  // ----- Export to Excel -----
+  const exportToExcel = async () => {
+    setIsExporting(true)
+    try {
+      const params = new URLSearchParams({
+        type: 'export-orders',
+        period: selectedPeriod,
+        storeId: selectedStore,
+      })
+      const res = await fetch(`/api/orders?${params}`)
+      if (!res.ok) throw new Error('Failed to export')
+      const data = await res.json()
+
+      // Create worksheet
+      const worksheet = XLSX.utils.json_to_sheet(data, {
+        header: [
+          'orderNumber',
+          'date',
+          'sku',
+          'productName',
+          'quantity',
+          'unitPrice',
+          'lineTotal',
+          'orderTotal',
+          'status',
+          'customerName',
+          'city',
+          'bl',
+          'facture',
+        ],
+      })
+
+      // Rename headers to match user's request
+      const headerMapping: Record<string, string> = {
+        orderNumber: 'Order number',
+        date: 'Date',
+        sku: 'SKU',
+        productName: 'Name',
+        quantity: 'Quantity',
+        unitPrice: 'Unit price',
+        lineTotal: 'Total line',
+        orderTotal: 'Total Order',
+        status: 'Status',
+        customerName: 'Name',
+        city: 'City',
+        bl: 'N° BL',
+        facture: 'N° facture',
+      }
+
+      // Apply header mapping (XLSX.utils.sheet_add_aoa can be used for custom headers)
+      const newWorksheet = XLSX.utils.json_to_sheet(data, {
+        header: Object.keys(headerMapping),
+      })
+      XLSX.utils.sheet_add_aoa(newWorksheet, [Object.values(headerMapping)], { origin: 'A1' })
+
+      // Create workbook and download
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, newWorksheet, 'Orders')
+      XLSX.writeFile(workbook, `orders_export_${new Date().toISOString().split('T')[0]}.xlsx`)
+    } catch (err) {
+      alert('Export failed')
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   // ----- handlers -----
   const goToPage = (page: number) => {
@@ -140,6 +208,16 @@ export default function OrdersPage() {
                 />
               </div>
             </div>
+
+            {/* Export button */}
+            <button
+              onClick={exportToExcel}
+              disabled={isExporting}
+              className="flex items-center gap-1.5 border border-[#E3E3E3] rounded-md px-4 py-2 text-sm text-[#303030] hover:bg-gray-50 disabled:opacity-50"
+            >
+              <Download size={16} />
+              {isExporting ? 'Exporting...' : 'Export Excel'}
+            </button>
           </div>
 
           {/* Table */}
@@ -174,7 +252,6 @@ export default function OrdersPage() {
                       >
                         <td className="px-4 py-3"><input type="checkbox" onClick={(e) => e.stopPropagation()} /></td>
                         <td className="px-4 py-3 text-sm font-medium text-[#008060]">#{order.orderNumber}</td>
-                        {/* Interactive Flags */}
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <StatusBadge
                             storeId={order._storeId}

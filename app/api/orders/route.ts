@@ -192,6 +192,89 @@ export async function GET(request: NextRequest) {
     return product ? NextResponse.json(product) : NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
+
+// ----- Export Orders (flattened line items) -----
+if (type === 'export-orders') {
+  const storeId = searchParams.get('storeId') || 'all'
+  const period = searchParams.get('period') || '30d'
+  const start = searchParams.get('start') || undefined
+  const end = searchParams.get('end') || undefined
+
+  const dateRange = getDateRange(period, start, end)
+  const storesToFetch = storeId === 'all' ? STORES.map(s => s.id) : [storeId]
+
+  // Fetch all orders from required stores (no pagination limit – use the same fetchAllOrders with a high limit)
+  const results = await Promise.all(storesToFetch.map(async (id) => {
+    const platform = process.env[`STORE${id}_PLATFORM`] || ''
+    const baseUrl = process.env[`STORE${id}_BASE_URL`] || ''
+    if (!platform || !baseUrl) return []
+    const creds = {
+      key: process.env[`STORE${id}_CONSUMER_KEY`],
+      secret: process.env[`STORE${id}_CONSUMER_SECRET`],
+      token: process.env[`STORE${id}_ACCESS_TOKEN`],
+    }
+    // Use a high maxOrders to get everything (e.g., 10000)
+    const orders = await fetchAllOrders(id, platform, baseUrl, creds, dateRange, 10000)
+    return orders.map((order: any) => ({
+      ...order,
+      _storeId: id,
+      _storeName: extractStoreName(baseUrl),
+      orderNumber: order.number || order.order_number || order.name,
+      total: order.total || order.current_total_price,
+      createdAt: order.date_created || order.created_at,
+      status: order.status || order.financial_status,
+    }))
+  }))
+
+  let allOrders = results.flat()
+  allOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  // Flatten line items
+  const exportRows: any[] = []
+  allOrders.forEach(order => {
+    const items = order.line_items || []
+    if (items.length === 0) {
+      // order with no line items? rare, but include as one row
+      exportRows.push({
+        orderNumber: order.orderNumber,
+        date: order.createdAt,
+        sku: '',
+        productName: '',
+        quantity: 0,
+        unitPrice: 0,
+        lineTotal: 0,
+        orderTotal: order.total,
+        status: order.status,
+        customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
+        city: order.billing?.city || '',
+        bl: '',
+        facture: '',
+      })
+    } else {
+      items.forEach((item: any) => {
+        exportRows.push({
+          orderNumber: order.orderNumber,
+          date: order.createdAt,
+          sku: item.sku || '',
+          productName: item.name || '',
+          quantity: item.quantity,
+          unitPrice: item.price,
+          lineTotal: item.total,
+          orderTotal: order.total,
+          status: order.status,
+          customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
+          city: order.billing?.city || '',
+          bl: '',
+          facture: '',
+        })
+      })
+    }
+  })
+
+  return NextResponse.json(exportRows)
+}
+
+
   // ----- Orders Detail -----
   if (type === 'detail') {
     const storeId = searchParams.get('storeId')
