@@ -1,12 +1,11 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import OrdersStats from './OrdersStats'
 import StatusBadge from './StatusBadge'
 import OrderDetailView from './OrderDetailView'
 import {
-  ChevronDown, ChevronLeft, ChevronRight, Plus, Search,
+  ChevronLeft, ChevronRight, Plus, Search,
 } from 'lucide-react'
 
 // ---------- API helpers ----------
@@ -24,37 +23,9 @@ async function fetchOrdersPage(page: number, period: string, storeId: string, li
   return res.json()
 }
 
-// Live summary stats (independent of table filters)
-function useSummaryStats() {
-  const { data: today } = useQuery({
-    queryKey: ['summary-today'],
-    queryFn: async () => {
-      const res = await fetch('/api/orders?type=stats&period=today&storeId=all&metric=orders')
-      return res.json()
-    },
-  })
-  const { data: week } = useQuery({
-    queryKey: ['summary-this_week'],
-    queryFn: async () => {
-      const res = await fetch('/api/orders?type=stats&period=this_week&storeId=all&metric=orders')
-      return res.json()
-    },
-  })
-  const { data: month } = useQuery({
-    queryKey: ['summary-30d'],
-    queryFn: async () => {
-      const res = await fetch('/api/orders?type=stats&period=30d&storeId=all&metric=orders')
-      return res.json()
-    },
-  })
-  return {
-    todayOrders: today?.orders ?? 0,
-    weekOrders: week?.orders ?? 0,
-    monthOrders: month?.orders ?? 0,
-  }
-}
-
 export default function OrdersPage() {
+  const queryClient = useQueryClient()
+
   // ----- view state -----
   const [view, setView] = useState<'list' | 'detail'>('list')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
@@ -62,7 +33,7 @@ export default function OrdersPage() {
 
   // ----- filter state -----
   const [selectedPeriod, setSelectedPeriod] = useState('30d')
-  const [selectedStore, setSelectedStore] = useState('all')   // <-- new store filter for orders
+  const [selectedStore, setSelectedStore] = useState('all')   // store filter for orders
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -83,7 +54,26 @@ export default function OrdersPage() {
     ? orders
     : orders.filter((o: any) => o.status === statusFilter)
 
-  const summary = useSummaryStats()
+  // ----- Status update mutation -----
+  const updateStatus = useMutation({
+    mutationFn: async ({ storeId, orderId, status }: { storeId: string; orderId: string; status: string }) => {
+      const res = await fetch('/api/orders', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId, orderId, status }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed' }))
+        throw new Error(err.error || 'Failed to update status')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
+    },
+    onError: (err: Error) => alert('Status update failed: ' + err.message),
+  })
 
   // ----- handlers -----
   const goToPage = (page: number) => {
@@ -104,43 +94,6 @@ export default function OrdersPage() {
   // ----- Render -----
   return (
     <>
-      {/* --- Page header --- */}
-      {/* <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-[#303030]">Orders</h1>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-1.5 border border-[#E3E3E3] rounded-md px-4 py-2 text-sm text-[#303030] hover:bg-gray-50">
-            Export
-          </button>
-          <button className="flex items-center gap-1.5 bg-[#008060] text-white rounded-md px-4 py-2 text-sm font-medium">
-            <Plus size={16} /> Create order
-          </button>
-        </div>
-      </div> */}
-
-      {/* --- Summary cards (independent of table filters) --- */}
-      {/* <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] p-4">
-          <p className="text-xs text-[#616161] uppercase tracking-wide">Today's Orders</p>
-          <p className="text-2xl font-bold mt-1">{summary.todayOrders}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] p-4">
-          <p className="text-xs text-[#616161] uppercase tracking-wide">This Week's Orders</p>
-          <p className="text-2xl font-bold mt-1">{summary.weekOrders}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] p-4">
-          <p className="text-xs text-[#616161] uppercase tracking-wide">Last 30 Days</p>
-          <p className="text-2xl font-bold mt-1">{summary.monthOrders}</p>
-        </div>
-      </div> */}
-
-      {/* --- Analytics card --- */}
-      {/* <OrdersStats
-        selectedStore={selectedStore}
-        onStoreChange={setSelectedStore}
-        selectedPeriod={selectedPeriod}
-        onPeriodChange={setSelectedPeriod}
-      /> */}
-
       {/* --- Table or Detail view --- */}
       {view === 'list' ? (
         <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] overflow-hidden">
@@ -221,14 +174,16 @@ export default function OrdersPage() {
                       >
                         <td className="px-4 py-3"><input type="checkbox" onClick={(e) => e.stopPropagation()} /></td>
                         <td className="px-4 py-3 text-sm font-medium text-[#008060]">#{order.orderNumber}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                            order.status === 'completed' ? 'bg-green-100 text-green-800' :
-                            order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {order.status}
-                          </span>
+                        {/* Interactive Flags */}
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <StatusBadge
+                            storeId={order._storeId}
+                            orderId={order.id}
+                            currentStatus={order.status}
+                            onStatusChange={(storeId, orderId, newStatus) => {
+                              updateStatus.mutate({ storeId, orderId, status: newStatus })
+                            }}
+                          />
                         </td>
                         <td className="px-4 py-3 text-sm text-[#616161]">
                           {new Date(order.createdAt).toLocaleDateString()}
