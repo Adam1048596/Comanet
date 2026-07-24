@@ -7,7 +7,7 @@ const STORES = [
   { id: '3', name: 'Gamarde' },
   { id: '4', name: 'Alphascience' },
   { id: '5', name: 'Ainhoa' },
-  { id: '6', name: 'cygne' },   // corrected from Hostinger to cygne as in your latest file
+  { id: '6', name: 'cygne' },
 ]
 
 // ---------- Brand prefix map ----------
@@ -230,17 +230,19 @@ export async function GET(request: NextRequest) {
     }))
 
     let allOrders = results.flat()
-    allOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    // Sort ascending by date (oldest first)
+    allOrders.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-    // Flatten line items
     const exportRows: any[] = []
     allOrders.forEach(order => {
-      const prefix = BRAND_PREFIX[order._storeId] || ''   // <-- brand prefix
+      const prefix = BRAND_PREFIX[order._storeId] || ''
       const items = order.line_items || []
+      const dateFormatted = order.createdAt ? new Date(order.createdAt).toLocaleDateString('fr-FR') : ''
+
       if (items.length === 0) {
         exportRows.push({
           orderNumber: `${prefix}${order.orderNumber}`,
-          date: order.createdAt,
+          date: dateFormatted,
           skuName: '',
           quantity: 0,
           unitPrice: 0,
@@ -256,7 +258,7 @@ export async function GET(request: NextRequest) {
         items.forEach((item: any) => {
           exportRows.push({
             orderNumber: `${prefix}${order.orderNumber}`,
-            date: order.createdAt,
+            date: dateFormatted,
             skuName: item.name || item.sku || '',
             quantity: item.quantity,
             unitPrice: item.price,
