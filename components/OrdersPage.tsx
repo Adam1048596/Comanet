@@ -4,14 +4,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import StatusBadge from './StatusBadge'
 import OrderDetailView from './OrderDetailView'
-import { formatOrderNumber } from '@/utils/brand-utils'
 import {
   ChevronLeft, ChevronRight, Plus, Search, Download
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // ---------- API helpers ----------
-async function fetchOrdersPage(page: number, period: string, storeId: string, limit = 20) {
+async function fetchOrdersPage(
+  page: number,
+  period: string,
+  storeId: string,
+  limit = 20,
+  start?: string,
+  end?: string
+) {
   const offset = (page - 1) * limit
   const params = new URLSearchParams({
     type: 'list',
@@ -20,6 +26,10 @@ async function fetchOrdersPage(page: number, period: string, storeId: string, li
     period,
     storeId,
   })
+  if (period === 'custom' && start && end) {
+    params.set('start', start)
+    params.set('end', end)
+  }
   const res = await fetch(`/api/orders?${params}`)
   if (!res.ok) throw new Error('Failed to load orders')
   return res.json()
@@ -35,6 +45,8 @@ export default function OrdersPage() {
 
   // ----- filter state -----
   const [selectedPeriod, setSelectedPeriod] = useState('30d')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
   const [selectedStore, setSelectedStore] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
@@ -44,8 +56,16 @@ export default function OrdersPage() {
 
   // ----- data fetching -----
   const { data: ordersData, isLoading, error } = useQuery({
-    queryKey: ['all-orders', selectedPeriod, selectedStore, currentPage, searchTerm],
-    queryFn: () => fetchOrdersPage(currentPage, selectedPeriod, selectedStore, limit),
+    queryKey: ['all-orders', selectedPeriod, selectedStore, currentPage, searchTerm, customStart, customEnd],
+    queryFn: () =>
+      fetchOrdersPage(
+        currentPage,
+        selectedPeriod,
+        selectedStore,
+        limit,
+        selectedPeriod === 'custom' ? customStart : undefined,
+        selectedPeriod === 'custom' ? customEnd : undefined
+      ),
     refetchInterval: 30000,
   })
 
@@ -53,9 +73,8 @@ export default function OrdersPage() {
   const totalOrders = ordersData?.total || 0
   const totalPages = Math.ceil(totalOrders / limit)
 
-  const filteredOrders = statusFilter === 'all'
-    ? orders
-    : orders.filter((o: any) => o.status === statusFilter)
+  const filteredOrders =
+    statusFilter === 'all' ? orders : orders.filter((o: any) => o.status === statusFilter)
 
   // ----- Status update mutation -----
   const updateStatus = useMutation({
@@ -87,51 +106,35 @@ export default function OrdersPage() {
         period: selectedPeriod,
         storeId: selectedStore,
       })
+      if (selectedPeriod === 'custom' && customStart && customEnd) {
+        params.set('start', customStart)
+        params.set('end', customEnd)
+      }
       const res = await fetch(`/api/orders?${params}`)
       if (!res.ok) throw new Error('Failed to export')
       const data = await res.json()
 
       // Create worksheet
-      const worksheet = XLSX.utils.json_to_sheet(data, {
-        header: [
-          'orderNumber',
-          'date',
-          'skuName',
-          'quantity',
-          'unitPrice',
-          'lineTotal',
-          'orderTotal',
-          'status',
-          'customerName',
-          'city',
-          'bl',
-          'facture',
-        ],
-      })
-
-      // Rename headers to match user's request
       const headerMapping: Record<string, string> = {
         orderNumber: 'Order number',
         date: 'Date',
-        skuName: 'SKU Name',
+        skuName: 'SKU / Name',
         quantity: 'Quantity',
         unitPrice: 'Unit price',
         lineTotal: 'Total line',
         orderTotal: 'Total Order',
         status: 'Status',
-        customerName: 'Name',
+        customerName: 'Customer Name',
         city: 'City',
         bl: 'N° BL',
         facture: 'N° facture',
       }
 
-      // Apply header mapping (XLSX.utils.sheet_add_aoa can be used for custom headers)
       const newWorksheet = XLSX.utils.json_to_sheet(data, {
         header: Object.keys(headerMapping),
       })
       XLSX.utils.sheet_add_aoa(newWorksheet, [Object.values(headerMapping)], { origin: 'A1' })
 
-      // Create workbook and download
       const workbook = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(workbook, newWorksheet, 'Orders')
       XLSX.writeFile(workbook, `orders_export_${new Date().toISOString().split('T')[0]}.xlsx`)
@@ -165,20 +168,58 @@ export default function OrdersPage() {
       {view === 'list' ? (
         <div className="bg-white rounded-lg shadow-sm border border-[#E3E3E3] overflow-hidden">
           {/* Table filter bar */}
-          <div className="flex items-center justify-between px-6 py-3 border-b border-[#E3E3E3]">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between px-6 py-3 border-b border-[#E3E3E3] flex-wrap gap-3">
+            <div className="flex items-center gap-4 flex-wrap">
               {/* Status filter */}
               <div className="flex rounded-md border border-[#E3E3E3] overflow-hidden">
                 {['all', 'pending', 'processing', 'completed'].map(s => (
                   <button
                     key={s}
                     onClick={() => setStatusFilter(s)}
-                    className={`px-3 py-1.5 text-sm capitalize ${statusFilter === s ? 'bg-[#008060] text-white' : 'bg-white text-[#303030] hover:bg-gray-50'}`}
+                    className={`px-3 py-1.5 text-sm capitalize ${
+                      statusFilter === s ? 'bg-[#008060] text-white' : 'bg-white text-[#303030] hover:bg-gray-50'
+                    }`}
                   >
                     {s === 'all' ? 'All' : s}
                   </button>
                 ))}
               </div>
+
+              {/* Period filter */}
+              <select
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm"
+              >
+                <option value="today">Today</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+                <option value="year">This Year</option>
+                <option value="all_time">All Time</option>
+                <option value="custom">Custom Range</option>
+              </select>
+
+              {/* Custom date inputs */}
+              {selectedPeriod === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    className="border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm"
+                    placeholder="Start"
+                  />
+                  <span className="text-gray-500">–</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    className="border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm"
+                    placeholder="End"
+                  />
+                </div>
+              )}
 
               {/* Brand filter (store) */}
               <select
@@ -192,7 +233,7 @@ export default function OrdersPage() {
                 <option value="3">Gamarde</option>
                 <option value="4">Alphascience</option>
                 <option value="5">Ainhoa</option>
-                <option value="6">Hostinger</option>
+                <option value="6">Cygne</option>
               </select>
 
               {/* Search */}
@@ -202,7 +243,10 @@ export default function OrdersPage() {
                   type="text"
                   placeholder="Search orders..."
                   value={searchTerm}
-                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setCurrentPage(1)
+                  }}
                   className="pl-9 pr-4 py-1.5 border border-[#E3E3E3] rounded-md text-sm focus:ring-1 focus:ring-[#008060]"
                 />
               </div>
@@ -221,7 +265,9 @@ export default function OrdersPage() {
 
           {/* Table */}
           {isLoading ? (
-            <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-2 border-gray-300 border-t-[#008060] rounded-full" /></div>
+            <div className="flex justify-center py-12">
+              <div className="animate-spin h-8 w-8 border-2 border-gray-300 border-t-[#008060] rounded-full" />
+            </div>
           ) : error ? (
             <div className="text-center py-12 text-red-500">Failed to load orders</div>
           ) : (
@@ -249,9 +295,11 @@ export default function OrdersPage() {
                         className="hover:bg-gray-50 cursor-pointer transition-colors h-[52px]"
                         onClick={() => handleRowClick(order)}
                       >
-                        <td className="px-4 py-3"><input type="checkbox" onClick={(e) => e.stopPropagation()} /></td>
+                        <td className="px-4 py-3">
+                          <input type="checkbox" onClick={(e) => e.stopPropagation()} />
+                        </td>
                         <td className="px-4 py-3 text-sm font-medium text-[#008060]">
-                          #{formatOrderNumber(order)}
+                          #{order.orderNumber}
                         </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <StatusBadge
@@ -273,22 +321,32 @@ export default function OrdersPage() {
                         <td className="px-4 py-3 text-sm text-[#616161]">{order._storeName}</td>
                         <td className="px-4 py-3 text-sm">{order.total}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            order.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
-                            order.payment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              order.payment_status === 'paid'
+                                ? 'bg-green-100 text-green-800'
+                                : order.payment_status === 'pending'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
                             {order.payment_status || 'pending'}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           {order.status === 'completed' ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Fulfilled</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              Fulfilled
+                            </span>
                           ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Unfulfilled</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              Unfulfilled
+                            </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-sm">{order.line_items?.length || order.items_count || 0}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {order.line_items?.length || order.items_count || 0}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -298,12 +356,26 @@ export default function OrdersPage() {
               {/* Pagination */}
               <div className="flex items-center justify-between px-6 py-3 border-t border-[#E3E3E3] text-sm">
                 <span className="text-[#616161]">
-                  {totalOrders > 0 ? `${(currentPage - 1) * limit + 1}-${Math.min(currentPage * limit, totalOrders)} of ${totalOrders}` : '0 orders'}
+                  {totalOrders > 0
+                    ? `${(currentPage - 1) * limit + 1}-${Math.min(currentPage * limit, totalOrders)} of ${totalOrders}`
+                    : '0 orders'}
                 </span>
                 <div className="flex items-center gap-2">
-                  <button disabled={currentPage === 1} onClick={() => goToPage(currentPage - 1)} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"><ChevronLeft size={18} /></button>
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => goToPage(currentPage - 1)}
+                    className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
                   <span className="px-2">{currentPage}</span>
-                  <button disabled={currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"><ChevronRight size={18} /></button>
+                  <button
+                    disabled={currentPage >= totalPages}
+                    onClick={() => goToPage(currentPage + 1)}
+                    className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
                 </div>
               </div>
             </>
