@@ -118,6 +118,7 @@ export default function OrdersPage() {
       const headerMapping: Record<string, string> = {
         orderNumber: 'Order number',
         date: 'Date',
+        marque: 'Marque',
         skuName: 'SKU / Name',
         quantity: 'Quantity',
         unitPrice: 'Unit price',

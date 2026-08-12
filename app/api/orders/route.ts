@@ -243,6 +243,7 @@ export async function GET(request: NextRequest) {
         exportRows.push({
           orderNumber: `${prefix}${order.orderNumber}`,
           date: dateFormatted,
+          marque: order._storeName || '', 
           skuName: '',
           quantity: 0,
           unitPrice: 0,
