@@ -198,56 +198,75 @@ export async function GET(request: NextRequest) {
     return product ? NextResponse.json(product) : NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // ----- Export Orders (flattened line items) -----
-  if (type === 'export-orders') {
-    const storeId = searchParams.get('storeId') || 'all'
-    const period = searchParams.get('period') || '30d'
-    const start = searchParams.get('start') || undefined
-    const end = searchParams.get('end') || undefined
+// ----- Export Orders (flattened line items) -----
+if (type === 'export-orders') {
+  const storeId = searchParams.get('storeId') || 'all'
+  const period = searchParams.get('period') || '30d'
+  const start = searchParams.get('start') || undefined
+  const end = searchParams.get('end') || undefined
 
-    const dateRange = getDateRange(period, start, end)
-    const storesToFetch = storeId === 'all' ? STORES.map(s => s.id) : [storeId]
+  const dateRange = getDateRange(period, start, end)
+  const storesToFetch = storeId === 'all' ? STORES.map(s => s.id) : [storeId]
 
-    const results = await Promise.all(storesToFetch.map(async (id) => {
-      const platform = process.env[`STORE${id}_PLATFORM`] || ''
-      const baseUrl = process.env[`STORE${id}_BASE_URL`] || ''
-      if (!platform || !baseUrl) return []
-      const creds = {
-        key: process.env[`STORE${id}_CONSUMER_KEY`],
-        secret: process.env[`STORE${id}_CONSUMER_SECRET`],
-        token: process.env[`STORE${id}_ACCESS_TOKEN`],
-      }
-      const orders = await fetchAllOrders(id, platform, baseUrl, creds, dateRange, 10000)
-      return orders.map((order: any) => ({
-        ...order,
-        _storeId: id,
-        _storeName: extractStoreName(baseUrl),
-        orderNumber: order.number || order.order_number || order.name,
-        total: order.total || order.current_total_price,
-        createdAt: order.date_created || order.created_at,
-        status: order.status || order.financial_status,
-      }))
+  const results = await Promise.all(storesToFetch.map(async (id) => {
+    const platform = process.env[`STORE${id}_PLATFORM`] || ''
+    const baseUrl = process.env[`STORE${id}_BASE_URL`] || ''
+    if (!platform || !baseUrl) return []
+    const creds = {
+      key: process.env[`STORE${id}_CONSUMER_KEY`],
+      secret: process.env[`STORE${id}_CONSUMER_SECRET`],
+      token: process.env[`STORE${id}_ACCESS_TOKEN`],
+    }
+    const orders = await fetchAllOrders(id, platform, baseUrl, creds, dateRange, 10000)
+    return orders.map((order: any) => ({
+      ...order,
+      _storeId: id,
+      _storeName: extractStoreName(baseUrl),
+      orderNumber: order.number || order.order_number || order.name,
+      total: order.total || order.current_total_price,
+      createdAt: order.date_created || order.created_at,
+      status: order.status || order.financial_status,
     }))
+  }))
 
-    let allOrders = results.flat()
-    // Sort ascending by date (oldest first)
-    allOrders.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  let allOrders = results.flat()
+  // Sort ascending by date (oldest first)
+  allOrders.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-    const exportRows: any[] = []
-    allOrders.forEach(order => {
-      const prefix = BRAND_PREFIX[order._storeId] || ''
-      const items = order.line_items || []
-      const dateFormatted = order.createdAt ? new Date(order.createdAt).toLocaleDateString('fr-FR') : ''
+  const exportRows: any[] = []
+  allOrders.forEach(order => {
+    const prefix = BRAND_PREFIX[order._storeId] || ''
+    const items = order.line_items || []
+    const dateFormatted = order.createdAt ? new Date(order.createdAt).toLocaleDateString('fr-FR') : ''
+    // Reliable store name – fallback to STORES array
+    const storeName = order._storeName || STORES.find(s => s.id === order._storeId)?.name || ''
 
-      if (items.length === 0) {
+    if (items.length === 0) {
+      exportRows.push({
+        orderNumber: `${prefix}${order.orderNumber}`,
+        marque: storeName,
+        date: dateFormatted,
+        skuName: '',
+        quantity: 0,
+        unitPrice: 0,
+        lineTotal: 0,
+        orderTotal: order.total,
+        status: order.status,
+        customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
+        city: order.billing?.city || '',
+        bl: '',
+        facture: '',
+      })
+    } else {
+      items.forEach((item: any) => {
         exportRows.push({
           orderNumber: `${prefix}${order.orderNumber}`,
+          marque: storeName,
           date: dateFormatted,
-          marque: order._storeName || '', 
-          skuName: '',
-          quantity: 0,
-          unitPrice: 0,
-          lineTotal: 0,
+          skuName: item.name || item.sku || '',
+          quantity: item.quantity,
+          unitPrice: item.price,
+          lineTotal: item.total,
           orderTotal: order.total,
           status: order.status,
           customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
@@ -255,28 +274,12 @@ export async function GET(request: NextRequest) {
           bl: '',
           facture: '',
         })
-      } else {
-        items.forEach((item: any) => {
-          exportRows.push({
-            orderNumber: `${prefix}${order.orderNumber}`,
-            date: dateFormatted,
-            skuName: item.name || item.sku || '',
-            quantity: item.quantity,
-            unitPrice: item.price,
-            lineTotal: item.total,
-            orderTotal: order.total,
-            status: order.status,
-            customerName: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim(),
-            city: order.billing?.city || '',
-            bl: '',
-            facture: '',
-          })
-        })
-      }
-    })
+      })
+    }
+  })
 
-    return NextResponse.json(exportRows)
-  }
+  return NextResponse.json(exportRows)
+}
 
   // ----- Orders Detail -----
   if (type === 'detail') {
