@@ -34,7 +34,10 @@ export async function fetchAllOrders(
     let url = baseApiUrl + (platform === 'woocommerce' ? `&page=${page}` : `&page=${page}`)
     try {
       const res = await fetch(url, { headers })
-      if (!res.ok) break
+      if (!res.ok) {
+        console.error(`Error fetching orders from store ${storeId} (page ${page}): ${res.status} ${res.statusText}`)
+        break
+      }
       const data = await res.json()
       const orders = Array.isArray(data) ? data : (data.orders || [])
       if (orders.length === 0) {
@@ -46,6 +49,7 @@ export async function fetchAllOrders(
         if (platform === 'woocommerce' && orders.length < 100) hasMore = false
       }
     } catch (err) {
+      console.error(`Error fetching orders from store ${storeId} (page ${page}):`, err)
       break
     }
   }
