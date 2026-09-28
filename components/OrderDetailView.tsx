@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Package, CreditCard, FileText, User, MapPin, Shield, Tag, Truck, Printer, Edit, RotateCcw, XCircle, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Package, CreditCard, FileText, User, MapPin, Shield, Tag, Truck, Edit, RotateCcw, XCircle, CheckCircle } from 'lucide-react'
 import StatusBadge from './StatusBadge'
 
 const formatCurrency = (amount: number | string, currency: string = 'MAD') => {
@@ -17,7 +17,7 @@ interface OrderDetailViewProps {
 
 export default function OrderDetailView({ order, storeId, onBack }: OrderDetailViewProps) {
   // Fetch full order details using the unified API
-  const { data: fullOrder, isLoading } = useQuery({
+  const { data: fullOrder, isLoading, error } = useQuery({
     queryKey: ['order-detail', storeId, order.id],
     queryFn: async () => {
       const res = await fetch(`/api/orders?type=detail&storeId=${storeId}&orderId=${order.id}`)
@@ -34,10 +34,18 @@ export default function OrderDetailView({ order, storeId, onBack }: OrderDetailV
     )
   }
 
-  const o = fullOrder || order   // fallback to list data
+  if (error || !fullOrder) {
+    return (
+      <div className="space-y-4">
+        <button onClick={onBack} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
+          <ArrowLeft size={18} /> Back to Orders
+        </button>
+        <div className="text-center py-12 text-red-500">Failed to load order details</div>
+      </div>
+    )
+  }
 
-  // Quick action handlers (some are just placeholders)
-  const handlePrint = () => window.open(`/invoice/${o.id}?storeId=${storeId}`, '_blank')
+  const o = fullOrder
 
   // Timeline events (you can extend this later with real notes/events)
   const timeline = [
@@ -55,9 +63,6 @@ export default function OrderDetailView({ order, storeId, onBack }: OrderDetailV
         </button>
         <h1 className="text-xl font-semibold">Order #{o.orderNumber}</h1>
         <div className="flex items-center gap-2 ml-auto">
-          <button onClick={handlePrint} className="flex items-center gap-1 border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm hover:bg-gray-50">
-            <Printer size={16} /> Print
-          </button>
           <button className="flex items-center gap-1 border border-[#E3E3E3] rounded-md px-3 py-1.5 text-sm hover:bg-gray-50">
             <Edit size={16} /> Edit
           </button>

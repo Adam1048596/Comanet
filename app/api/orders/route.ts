@@ -28,6 +28,13 @@ function getDateRange(period: string, start?: string, end?: string) {
 
   switch (period) {
     case 'today': return { after: format(todayStart), before: format(now) }
+    case '7d': return { after: format(new Date(now.getTime() - 7 * 86400000)), before: format(now) }
+    case '30d': return { after: format(new Date(now.getTime() - 30 * 86400000)), before: format(now) }
+    case '90d': return { after: format(new Date(now.getTime() - 90 * 86400000)), before: format(now) }
+    case 'year': {
+      const soy = new Date(now.getFullYear(), 0, 1)
+      return { after: format(soy), before: format(now) }
+    }
     case 'yesterday': {
       const ys = new Date(todayStart.getTime() - 86400000)
       return { after: format(ys), before: format(new Date(todayStart.getTime() - 1)) }

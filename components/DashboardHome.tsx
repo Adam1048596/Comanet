@@ -5,7 +5,7 @@ import OrdersStats from './OrdersStats'
 import { ArrowRight } from 'lucide-react'
 
 export default function DashboardHome() {
-  const [selectedPeriod, setSelectedPeriod] = useState('30d')
+  const [selectedPeriod, setSelectedPeriod] = useState('this_month')
   const [selectedStore, setSelectedStore] = useState('all')
 
   return (
