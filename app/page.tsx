@@ -1,7 +1,6 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/utils/supabase/client'
 import { useEffect, useState } from 'react'
 import {
   LayoutDashboard, ShoppingCart, Package, Users, BarChart3, Settings, LogOut,
@@ -16,19 +15,24 @@ type View = 'dashboard' | 'orders' | 'products'
 
 export default function MainApp() {
   const router = useRouter()
-  const supabase = createClient()
   const [email, setEmail] = useState('')
+  const [authDisabled, setAuthDisabled] = useState(false)
   const [activeView, setActiveView] = useState<View>('dashboard')
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) router.push('/login')
-      else setEmail(user.email || '')
-    })
+    fetch('/api/auth/me')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (!data) router.push('/login')
+        else {
+          setEmail(data.email || '')
+          setAuthDisabled(!!data.authDisabled)
+        }
+      })
   }, [])
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    await fetch('/api/auth/logout', { method: 'POST' })
     router.push('/login')
   }
 
@@ -89,10 +93,12 @@ export default function MainApp() {
             <Settings size={18} />
             <span>Settings</span>
           </a>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-gray-400 hover:text-white text-sm mt-3 w-full">
-            <LogOut size={18} />
-            <span>Logout</span>
-          </button>
+          {!authDisabled && (
+            <button onClick={handleLogout} className="flex items-center gap-2 text-gray-400 hover:text-white text-sm mt-3 w-full">
+              <LogOut size={18} />
+              <span>Logout</span>
+            </button>
+          )}
         </div>
       </aside>
 

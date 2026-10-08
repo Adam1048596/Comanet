@@ -34,3 +34,16 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Sign in
+
+The app uses a simple built-in sign in (no Supabase). Set these env vars (locally in `.env.local`, and in Vercel project settings):
+
+| Variable | Description |
+| --- | --- |
+| `AUTH_EMAIL` | Email used to sign in |
+| `AUTH_PASSWORD` | Password used to sign in |
+| `AUTH_SECRET` | Long random string that signs the session cookie (`openssl rand -hex 32`) |
+| `AUTH_DISABLED` | Set to `true` to skip sign in entirely |
+
+See `.env.example`.
